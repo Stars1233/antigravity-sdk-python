@@ -134,7 +134,7 @@ async def main():
     async with Agent(config) as agent:
         # Returns instantly — does not block
         response = await agent.chat("Write a short poem about space.")
-        
+
         async for token in response:
             sys.stdout.write(token)
             sys.stdout.flush()
@@ -191,17 +191,17 @@ async def main():
     strategy = LocalConnectionStrategy(
         tool_runner=tool_runner,
     )
-    
+
     async with Conversation.create(strategy) as conversation:
         # High-level: one-call send + collect
         response = await conversation.chat("What files are here?")
         print(await response.text())
-        
+
         # Step history accumulates automatically
         print(f"Total steps: {len(conversation.history)}")
         print(f"Turns: {conversation.turn_count}")
         print(f"Last response: {conversation.last_response}")
-        
+
         # Low-level: streaming steps
         await conversation.send("Tell me more.")
         async for step in conversation.receive_steps():
@@ -227,14 +227,14 @@ config = LocalAgentConfig(system_instructions="You are an expert software archit
 async with Agent(config) as agent:
     # 1. Flat filesystem shortcut (automatically resolves as types.Document)
     pdf_spec = from_file("spec.pdf")
-    
+
     # 2. Direct constructor instantiation (perfect for in-memory raw bytes)
     chart_image = Image(
-        data=b"raw_png_bytes_here", 
-        mime_type="image/png", 
+        data=b"raw_png_bytes_here",
+        mime_type="image/png",
         description="Architecture blueprint"
     )
-    
+
     # Send a mixed list of text instructions and content classes
     prompt = [
         "Analyze this chart against the specification and list three security vulnerabilities:",
@@ -316,6 +316,65 @@ config = LocalAgentConfig(
     triggers=[every(60, check_status)],
 )
 await run_interactive_loop(config)
+```
+
+### Local AI Models
+
+The Antigravity SDK supports local, offline agentic workflows powered by Gemma 4 and LiteRT-LM. By pairing your SDK scripts with local models, you can run LLM-driven tasks completely offline.
+
+> [!NOTE]
+>
+> * Currently, this works best with `gemma-4-26B-A4B-it-gpu.litertlm`. Other `.litertlm` files may not work well, or not work at all.
+> * We recommend at least 24GB of VRAM/shared memory.
+> * We recommend using a 64K context size.
+
+#### Prerequisites and Installation
+
+First, it is recommended to create and activate a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Next, install the Antigravity SDK along with LiteRT-LM:
+
+```bash
+pip install google-antigravity litert-lm
+```
+
+Import the Gemma 4 26B MoE model. Take note of the imported model path (e.g. on MacOS, typically models are imported to USER/.litert-lm/models):
+
+```bash
+litert-lm import \
+  --from-huggingface-repo=litert-community/gemma-4-26B-A4B-it-litert-lm \
+  gemma-4-26B-A4B-it-gpu.litertlm \
+  gemma4-26b
+```
+
+Quick Start for Local Models:
+
+```python
+import asyncio
+import os
+from google.antigravity import Agent, LiteRTAgentConfig
+
+# Point directly to the locally imported LiteRT-LM model path
+MODEL_PATH = os.path.expanduser("~/.litert-lm/models/gemma4-26b/model.litertlm")
+
+async def main():
+    print(f"Using local LiteRT model: {MODEL_PATH}")
+    config = LiteRTAgentConfig(
+        model_path=MODEL_PATH,
+    ).lightweight()
+
+    async with Agent(config) as agent:
+        response = await agent.chat("What files are in the current directory?")
+        async for token in response:
+            print(token, end="", flush=True)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ## Architecture
