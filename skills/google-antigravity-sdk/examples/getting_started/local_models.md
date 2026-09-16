@@ -3,19 +3,22 @@
 ## Overview
 
 The Google Antigravity SDK supports running agents entirely on-device using local
-models. No API key or cloud connectivity is required. This guide walks through
-setup for two paths:
+models. No API key or cloud connectivity is required.
 
-- **LiteRT** — optimized runtime for local models on-device.
-- **OpenAI-compatible servers** — for Ollama, LM Studio, and similar tools.
+There are two primary local execution paths:
+
+- **LiteRT** — Google's optimized, high-performance runtime for running local
+  models directly on-device with native GPU/NPU acceleration.
+- **OpenAI-Compatible Servers** — for connecting to external local model servers
+  such as [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai).
 
 ---
 
-## Path 1: LiteRT with Gemma
+## Path 1: LiteRT (On-Device Runtime)
 
 ### Setup Steps
 
-#### 1. Create a virtual environment (recommended)
+#### 1. Create a virtual environment
 
 Using a virtual environment avoids PATH issues and dependency conflicts:
 
@@ -24,29 +27,19 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-#### 2. Install the SDK
+*(Optional: If your virtual environment lacks `pip`, run
+`python3 -m ensurepip --default-pip`)*.
+
+#### 2. Install the SDK and LiteRT dependencies
 
 ```bash
-pip install google-antigravity
+pip install google-antigravity litert-lm
 ```
 
-#### 3. Install LiteRT dependencies
+#### 3. Download and import the Gemma 4 26B model checkpoint
 
-```bash
-pip install litert-lm
-```
-
-> [!IMPORTANT]
-> `LiteRTAgentConfig` requires `litert-lm>=0.15.0`. If `0.15.0` is not yet
-> available on PyPI, install the nightly build instead:
-> 
-> ```bash
-> pip install litert-lm-nightly
-> ```
-
-#### 4. Download a model checkpoint
-
-Use the `litert-lm` CLI to import a model from Hugging Face:
+Use the `litert-lm` CLI utility to download and register the 26B Gemma 4
+checkpoint:
 
 ```bash
 litert-lm import \
@@ -57,16 +50,18 @@ litert-lm import \
 
 > [!NOTE]
 > This downloads approximately **16.8 GB** and registers the checkpoint at
-> `~/.litert-lm/models/gemma4-26b/model.litertlm`.
+> `~/.litert-lm/models/gemma4-26b/model.litertlm`. A device with **24 GB+ VRAM
+> or unified memory** is recommended for running the 26B model.
 
 > [!TIP]
-> On macOS, if `litert-lm import` fails with an SSL certificate error, run:
+> On macOS, if `litert-lm import` fails with an SSL certificate verification
+> error, run:
 > 
 > ```bash
 > pip install certifi
 > export SSL_CERT_FILE=$(python3 -c "import certifi; print(certifi.where())")
 > ```
-> Then retry the import command.
+> Then re-run the `litert-lm import` command.
 
 ### Minimal Example
 
@@ -74,16 +69,7 @@ litert-lm import \
 import asyncio
 import os
 
-from google.antigravity import Agent, CompactionConfig, LiteRTAgentConfig
-
-
-def compute_secret_hash(input_str: str) -> str:
-    """Computes a secret hash encoding for the provided input string.
-
-    Args:
-        input_str: The text string to encode.
-    """
-    return input_str[::-1]
+from google.antigravity import Agent, LiteRTAgentConfig
 
 
 async def main():
@@ -91,41 +77,75 @@ async def main():
         model_path=os.path.expanduser(
             "~/.litert-lm/models/gemma4-26b/model.litertlm"
         ),
-        compaction_config=CompactionConfig(token_threshold=65536),
-        tools=[compute_secret_hash],
-    ).lightweight()
+    )
+
     async with Agent(config) as agent:
-        response = await agent.chat("Compute the secret hash for 'Hello'.")
+        response = await agent.chat("Explain Python generators.")
         async for token in response:
             print(token, end="", flush=True)
         print()
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 > [!IMPORTANT]
-> `model_path` must be an absolute path.
+> `model_path` must be an absolute path. Use `os.path.expanduser()` to expand
+> `~`.
+
+> [!TIP]
+> `LiteRTAgentConfig` supports all standard `AgentConfig` options. Custom tools,
+> safety policies, system instructions, hooks, and workspaces configure
+> identically to `LocalAgentConfig` — refer to [custom_tool.md](custom_tool.md)
+> or [persona_config.md](persona_config.md) to customize your agent further.
+
+### Full Autonomous Local Agent Example (File Editing & Shell)
+
+For complete software development workflows, configure a workspace directory
+and enable autonomous tool permissions:
+
+```python
+import asyncio
+import os
+
+from google.antigravity import Agent, LiteRTAgentConfig
+from google.antigravity.hooks import policy
+
+
+async def main():
+    workspace = os.path.expanduser("~/my-local-project")
+    os.makedirs(workspace, exist_ok=True)
+
+    config = LiteRTAgentConfig(
+        model_path=os.path.expanduser(
+            "~/.litert-lm/models/gemma4-26b/model.litertlm"
+        ),
+        workspaces=[workspace],
+        # Auto-allows shell commands (run_command) without interactive confirmation:
+        policies=[policy.allow_all()],
+    )
+
+    async with Agent(config) as agent:
+        response = await agent.chat(
+            "Create a simple static webpage index.html with a dark-mode toggle."
+        )
+        async for token in response:
+            print(token, end="", flush=True)
+        print()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
 
 ### Key Configuration Notes
 
-| Setting                 | Detail                                             |
-| ----------------------- | -------------------------------------------------- |
-| `.lightweight()` preset | Recommended for local execution. Automatically     |
-:                         : selects core development tools, prunes system      :
-:                         : prompt overhead, disables subagents, and           :
-:                         : configures context compaction for local models.    :
-| `compaction_config` (`token_threshold`) | Set to `CompactionConfig(token_threshold=65536)` to accommodate most local hardware setups. The model supports larger windows, but 64k balances capability with memory constraints. Default is `4096`. |
-| GPU acceleration        | Auto-detected. Apple Silicon uses **Metal**;       |
-:                         : Linux/Windows uses **CUDA**.                       :
-| CPU-only fallback       | If no GPU is available, set `backend='cpu'` in the |
-:                         : config or set the environment variable             :
-:                         : `ANTIGRAVITY_ALLOW_CPU=1`.                         :
-
-> [!NOTE]
-> On Apple Silicon, the first execution compiles GPU graph shaders for Metal.
-> This may take 1–2 minutes before token streaming starts. Subsequent launches
-> use cached binaries and initialize in seconds.
+| Setting | Detail |
+| --- | --- |
+| **Lightweight defaults (auto-applied)** | `LiteRTAgentConfig` automatically applies the lightweight preset upon instantiation: configures the minimal tool set (`BuiltinTools.minimal()`: view, edit, write, bash, list_dir, grep), prunes verbose prompt sections (`AgentBehavior.MINIMAL`), disables subagent delegation, and sets context compaction. No explicit `.lightweight()` call is needed. |
+| **Context compaction (`token_threshold`)** | `LiteRTAgentConfig` automatically configures a derived context compaction threshold (`token_threshold=40960`) tailored for the LiteRT engine's 64k KV-cache capacity (`65536` tokens), enabling multi-turn file inspection without manual configuration. |
+| **Hardware acceleration** | Automatically detected: **Metal** on Apple Silicon (macOS), **CUDA** on Linux/Windows, and **WebGPU**. On Apple Silicon, the initial launch compiles GPU graph shaders for Metal (1–2 minutes); subsequent runs use cached binaries and start in seconds. |
 
 ---
 
@@ -141,9 +161,10 @@ from google.antigravity import Agent, LocalOpenAIAgentConfig
 
 async def main():
     config = LocalOpenAIAgentConfig(
-        model="gemma2:27b",
+        model="gemma4:26b",
         base_url="http://localhost:11434/v1",  # Ollama default
     ).lightweight()
+
     async with Agent(config) as agent:
         response = await agent.chat("Hello!")
         async for token in response:
@@ -151,12 +172,13 @@ async def main():
         print()
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 > [!TIP]
 > For **Ollama**, start the server with `ollama serve` and pull a model
-> (`ollama pull gemma2:27b`) before running your agent. For **LM Studio**,
+> (`ollama pull gemma4:26b`) before running your agent. For **LM Studio**,
 > enable the local server in the app settings and note the port it binds to.
 
 > [!WARNING]
@@ -166,4 +188,4 @@ asyncio.run(main())
 > or LM Studio that you start and manage independently.
 
 For the full comparison table and detailed configuration reference, see
-[references/local_models.md](../references/local_models.md).
+`references/local_models.md`.

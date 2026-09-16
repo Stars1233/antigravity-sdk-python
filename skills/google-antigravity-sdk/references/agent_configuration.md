@@ -252,20 +252,35 @@ For more details, see [mcp_integration.md](mcp_integration.md).
 
 ### Local Model Configuration
 
-The SDK supports running agents entirely on-device without an API key. Two
-additional config classes are available:
+The SDK supports running agents entirely on-device without an API key or cloud
+connectivity. Two config classes are available:
 
--   `LiteRTAgentConfig`: For running Gemma models locally via LiteRT-LM.
--   `LocalOpenAIAgentConfig`: For connecting to any OpenAI-compatible local
-    server (e.g., Ollama, LM Studio).
+-   `LiteRTAgentConfig`: For running local models (such as Gemma 4 26B) on-device
+    using Google's LiteRT runtime. Automatically manages the loopback inference
+    server lifecycle.
+-   `LocalOpenAIAgentConfig`: For connecting to an external OpenAI-compatible
+    local server (e.g., Ollama, LM Studio).
 
-Both config classes support the `.lightweight()` method (e.g.,
-`LiteRTAgentConfig(...).lightweight()`), which automatically configures core
-development tools, prunes system instructions for smaller context windows,
-disables subagents, and tunes context compaction.
+`LiteRTAgentConfig` automatically applies the lightweight preset upon
+instantiation (configuring core coding tools, pruning system instructions for
+smaller context windows, disabling subagents, and tuning context compaction).
+For `LocalOpenAIAgentConfig`, call `.lightweight()` explicitly to apply the
+same optimizations.
 
-For full setup instructions, hardware requirements, and configuration details,
-see [local_models.md](local_models.md).
+```python
+import os
+from google.antigravity import Agent, LiteRTAgentConfig
+
+config = LiteRTAgentConfig(
+    model_path=os.path.expanduser(
+        "~/.litert-lm/models/gemma4-26b/model.litertlm"
+    ),
+)
+```
+
+For full setup instructions (including installing Gemma 4 26B via
+`litert-lm import`), hardware requirements, and configuration details, see
+[local_models.md](local_models.md).
 
 ### Custom Environment Variables (Subprocess & Shell Isolation)
 

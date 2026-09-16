@@ -1,24 +1,40 @@
 # Running Agents with Local Models
 
 This guide covers running Google Antigravity agents entirely on-device using
-local models. Local execution does not require an API key.
+local models. Local execution does not require an API key or cloud connectivity.
 
 There are two configuration classes for local model execution:
 
-| Config Class | Backend | Auth Required | Use Case |
-|---|---|---|---|
-| `LiteRTAgentConfig` | Local LiteRT-LM | None | On-device models via LiteRT |
-| `LocalOpenAIAgentConfig` | Local OpenAI-compat server | None | Ollama, LM Studio, etc. |
+| Config Class | Backend | Auth Required | Execution Mode | Use Case |
+|---|---|---|---|---|
+| `LiteRTAgentConfig` | Local LiteRT-LM | None | Managed On-Device | High-performance on-device execution via LiteRT runtime (e.g., Gemma 4 26B) |
+| `LocalOpenAIAgentConfig` | External OpenAI-compat server | None | External Server | Connecting to external local servers (Ollama, LM Studio, etc.) |
 
 ## LiteRTAgentConfig
 
-`LiteRTAgentConfig` runs local models using the LiteRT-LM runtime. When
+`LiteRTAgentConfig` runs local models using Google's LiteRT runtime. When
 the agent starts, it spins up a local OpenAI-compatible loopback HTTP server
-backed by the model checkpoint. All inference happens on-device.
+backed by the model checkpoint. All inference and tool execution happen
+on-device with zero cloud network latency and zero cost.
 
-> [!IMPORTANT]
-> `LiteRTAgentConfig` requires `litert-lm>=0.15.0`. If `0.15.0` is not yet
-> available on PyPI, install the nightly build: `pip install litert-lm-nightly`.
+### Quick Setup: Installing Gemma 4 26B
+
+Install the dependencies and import the 26B Gemma 4 checkpoint using the
+`litert-lm` CLI:
+
+```bash
+pip install google-antigravity litert-lm
+litert-lm import \
+  --from-huggingface-repo=litert-community/gemma-4-26B-A4B-it-litert-lm \
+  gemma-4-26B-A4B-it-web.litertlm \
+  gemma4-26b
+```
+
+This downloads approximately **16.8 GB** and registers the checkpoint at
+`~/.litert-lm/models/gemma4-26b/model.litertlm`. A device with **24 GB+ VRAM
+or unified memory** is recommended for running the 26B model.
+
+*(Tip: On macOS, if the import fails with an SSL verification error, install `certifi` and run `export SSL_CERT_FILE=$(python3 -c "import certifi; print(certifi.where())")` before retrying).*
 
 ### Import
 
@@ -31,14 +47,12 @@ from google.antigravity import Agent, LiteRTAgentConfig, LiteRTBackend
 - `model_path` (str, **required**): Absolute path to a `.litertlm` model file.
   Tilde (`~`) is **not** expanded automatically — use `os.path.expanduser()` in
   Python or pass the full absolute path.
-- `backend` (`'gpu'` | `'cpu'` | `'npu'`, default `'gpu'`): Hardware backend
-  for inference. Use `LiteRTBackend.GPU`, `LiteRTBackend.CPU`, or
-  `LiteRTBackend.NPU`.
+- `backend` (`'gpu'` | `'npu'`, default `'gpu'`): Hardware backend for
+  inference. Use `LiteRTBackend.GPU` or `LiteRTBackend.NPU`.
 - `compaction_config` (`CompactionConfig` | None, default None): Configure
-  compaction threshold (`token_threshold`). Set to `65536` to accommodate most
-  local hardware setups. The model supports larger windows, but 64k balances
-  capability with memory constraints. When unset, defaults to `4096` from
-  model metadata.
+  context compaction. By default, `LiteRTAgentConfig` automatically configures
+  a derived compaction threshold (`token_threshold=40960`) tailored for the
+  LiteRT engine's 64k KV-cache capacity (`65536` tokens).
 - `capabilities` (`CapabilitiesConfig` | None, default None): Configure agent
   capabilities (subagents, tool allowlists, behavior mode).
 - `enable_speculative_decoding` (bool, default False): Enable multi-token
@@ -56,45 +70,41 @@ All standard `AgentConfig` parameters are also supported: `system_instructions`,
 `capabilities`, `tools`, `policies`, `hooks`, `triggers`, `mcp_servers`,
 `subagents`, `workspaces`, etc.
 
-### Basic Example
+### Canonical Example
 
-For local execution, prefer `.lightweight()` to minimize prompt overhead,
-restrict tools to core coding capabilities, disable subagents, and configure
-context compaction for local models:
+`LiteRTAgentConfig` automatically applies the lightweight preset upon
+instantiation—minimizing prompt overhead, restricting tools to core coding
+capabilities, disabling subagents, and configuring context compaction:
 
 ```python
+import asyncio
 import os
 
 from google.antigravity import Agent, LiteRTAgentConfig
+from google.antigravity.hooks import policy
 
-config = LiteRTAgentConfig(
-    model_path=os.path.expanduser(
+
+async def main():
+    model_path = os.path.expanduser(
         "~/.litert-lm/models/gemma4-26b/model.litertlm"
-    ),
-).lightweight()
-async with Agent(config=config) as agent:
-    response = await agent.chat("Explain Python generators.")
-    print(response)
+    )
+
+    config = LiteRTAgentConfig(
+        model_path=model_path,
+        # Auto-allows shell commands (run_command) without interactive confirmation:
+        policies=[policy.allow_all()],
+    )
+
+    async with Agent(config=config) as agent:
+        response = await agent.chat("Explain Python generators.")
+        async for token in response:
+            print(token, end="", flush=True)
+        print()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
-
-### Full 64k Context Window
-
-By default, the KV-cache is allocated for only 4096 tokens. To use the full
-context window:
-
-```python
-config = LiteRTAgentConfig(
-    model_path=os.path.expanduser(
-        "~/.litert-lm/models/gemma4-26b/model.litertlm"
-    ),
-    compaction_config=CompactionConfig(token_threshold=65536),
-)
-```
-
-> [!IMPORTANT] **Setting `token_threshold=65536` increases memory usage.**
-> The model supports larger context windows, but 65536 is recommended to
-> accommodate most local hardware setups. Ensure your device has sufficient RAM
-> or VRAM.
 
 ### Speculative Decoding
 
@@ -108,26 +118,6 @@ config = LiteRTAgentConfig(
     enable_speculative_decoding=True,
 )
 ```
-
-### CPU Fallback
-
-If no GPU is available, you can run on CPU. Set the backend explicitly or use
-the environment variable:
-
-```python
-config = LiteRTAgentConfig(
-    model_path=os.path.expanduser(
-        "~/.litert-lm/models/gemma4-26b/model.litertlm"
-    ),
-    backend="cpu",
-)
-```
-
-Or set the environment variable `ANTIGRAVITY_ALLOW_CPU=1` before running.
-
-> [!WARNING] **CPU inference on large models is extremely slow.** This is only
-> practical for small models or quick testing. For production workloads, use a
-> GPU or consider a cloud-hosted model with `LocalAgentConfig`.
 
 ---
 
@@ -162,39 +152,48 @@ All standard `AgentConfig` parameters are also supported: `system_instructions`,
 
 ### Example with Ollama
 
-Start Ollama and pull a model first:
-
-```bash
-ollama pull gemma3:4b
-```
-
-Then create an agent (using `.lightweight()` for optimized prompt overhead and
-core coding tools):
+Start Ollama and pull the model (e.g. `ollama pull gemma4:26b`), then create an
+agent using `.lightweight()` for optimized prompt overhead and core coding
+tools:
 
 ```python
+import asyncio
 from google.antigravity import Agent, LocalOpenAIAgentConfig
 
-config = LocalOpenAIAgentConfig(
-    model="gemma3:4b",
-    base_url="http://localhost:11434/v1",
-).lightweight()
-async with Agent(config=config) as agent:
+
+async def main():
+  config = LocalOpenAIAgentConfig(
+      model="gemma4:26b",
+      base_url="http://localhost:11434/v1",
+  ).lightweight()
+  async with Agent(config=config) as agent:
     response = await agent.chat("What is the capital of France?")
-    print(response)
+    print(await response.text())
+
+
+if __name__ == "__main__":
+  asyncio.run(main())
 ```
 
 ### Example with LM Studio
 
 ```python
+import asyncio
 from google.antigravity import Agent, LocalOpenAIAgentConfig
 
-config = LocalOpenAIAgentConfig(
-    model="gemma-4-26B-A4B-it",
-    base_url="http://localhost:1234/v1",
-).lightweight()
-async with Agent(config=config) as agent:
+
+async def main():
+  config = LocalOpenAIAgentConfig(
+      model="gemma-4-26B-A4B-it",
+      base_url="http://localhost:1234/v1",
+  ).lightweight()
+  async with Agent(config=config) as agent:
     response = await agent.chat("Summarize this document.")
-    print(response)
+    print(await response.text())
+
+
+if __name__ == "__main__":
+  asyncio.run(main())
 ```
 
 ---
@@ -208,18 +207,16 @@ at startup and selects the appropriate backend. The detection logic is:
 - **Linux**: Checks for `nvidia-smi` and CUDA libraries (`libcuda.so`) → uses **CUDA** via the `'gpu'` backend.
 - **Windows**: Checks for `nvidia-smi` and CUDA libraries (`nvcuda.dll`). The LiteRT runtime also requires DirectX Shader Compiler components for GPU inference via WebGPU/Dawn.
 - **NPU**: Available via `backend='npu'` where compatible hardware and drivers are present.
-- **CPU fallback**: If no GPU is detected, set `backend='cpu'` or the environment variable `ANTIGRAVITY_ALLOW_CPU=1`.
 
 ### Decision Table
 
-| Your Environment | Recommended Config | Backend |
+| Your Environment | Suggested Config | Backend |
 |---|---|---|
 | macOS + Apple Silicon | `LiteRTAgentConfig` | `'gpu'` (Metal) |
 | Linux + NVIDIA GPU | `LiteRTAgentConfig` | `'gpu'` (CUDA) |
 | Windows + NVIDIA GPU | `LiteRTAgentConfig` | `'gpu'` (CUDA) |
 | Ollama / LM Studio running | `LocalOpenAIAgentConfig` | N/A |
 | NPU-equipped device | `LiteRTAgentConfig` | `'npu'` |
-| No GPU (CPU only) | `LiteRTAgentConfig` | `'cpu'` |
 
 ---
 
