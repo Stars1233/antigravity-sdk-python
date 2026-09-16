@@ -304,6 +304,10 @@ class SubagentConfig(pydantic.BaseModel):
       None, defaults to read-only tools.
     tools: Optional list of additional custom tools (callable functions or
       string names) to enable for this subagent.
+    model: Optional model name for this subagent. When specified, forces the
+      subagent to run under the given model instead of inheriting the parent
+      agent's model. Unlike the agent-level `model`, this accepts a name only:
+      subagents always run against the agent-level endpoint.
   """
 
   name: str
@@ -313,6 +317,7 @@ class SubagentConfig(pydantic.BaseModel):
   tools: list[Callable[..., Any] | str] | None = pydantic.Field(
       default_factory=list
   )
+  model: str | None = None
 
 
 class BuiltinTools(str, enum.Enum):

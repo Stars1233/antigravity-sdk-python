@@ -1992,6 +1992,41 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
         localharness_pb2.AGENT_BEHAVIOR_MINIMAL,
     )
 
+  def test_subagent_model_config_produces_valid_proto(self):
+    """Verifies that SubagentConfig.model string sets CustomAgent.model."""
+    strategy = self._make_strategy(
+        subagents=[
+            types.SubagentConfig(
+                name="flash_subagent",
+                description="A subagent that runs on flash.",
+                model="gemini-2.5-flash",
+            )
+        ]
+    )
+    config = strategy._build_harness_config()
+    self.assertLen(config.custom_subagents, 1)
+    self.assertEqual(
+        config.custom_subagents[0].model.name,
+        "gemini-2.5-flash",
+    )
+
+  def test_subagent_model_rejects_model_target(self):
+    """Verifies SubagentConfig.model rejects a ModelTarget.
+
+    Subagents may only pin a model name; localharness builds a single model API
+    client from the agent-level models, so a per-subagent endpoint cannot be
+    honored and must not be silently dropped.
+    """
+    with self.assertRaises(pydantic.ValidationError):
+      types.SubagentConfig(
+          name="custom_endpoint_subagent",
+          description="A subagent that runs on a custom endpoint.",
+          model=types.ModelTarget(
+              name="gemini-2.5-pro",
+              endpoint=types.GeminiAPIEndpoint(api_key="test-subagent-key"),
+          ),
+      )
+
   def test_legacy_shorthands_api_key_produces_valid_proto(self):
     """Verifies that the legacy api_key shorthand translates to the models proto."""
     cfg = local_connection_config.LocalAgentConfig(

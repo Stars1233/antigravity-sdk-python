@@ -2137,6 +2137,23 @@ class SubagentConfigTest(unittest.TestCase):
     with self.assertRaises(pydantic.ValidationError):
       types.SubagentConfig(**{"description": "helpful agent"})  # Missing name
 
+  def test_model_configuration(self):
+    sub_str = types.SubagentConfig(
+        name="flash_helper",
+        description="helpful agent",
+        model="gemini-2.5-flash",
+    )
+    self.assertEqual(sub_str.model, "gemini-2.5-flash")
+
+    # Subagents pin a model name only; a ModelTarget could carry an endpoint
+    # that localharness cannot honor, so it is rejected outright.
+    with self.assertRaises(pydantic.ValidationError):
+      types.SubagentConfig(
+          name="pro_helper",
+          description="helpful agent",
+          model=types.ModelTarget(name="gemini-2.5-pro"),
+      )
+
 
 class UsageMetadataTest(unittest.TestCase):
   """Tests for the UsageMetadata class."""

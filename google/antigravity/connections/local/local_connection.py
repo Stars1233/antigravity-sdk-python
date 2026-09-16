@@ -1130,6 +1130,12 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
               f" {tool}"
           )
 
+      model_proto = None
+      if subagent.model is not None:
+        # Subagents pin a model name only; they always run against the
+        # agent-level endpoint. See localharness/subagent.go.
+        model_proto = localharness_pb2.ModelConfig(name=subagent.model)
+
       custom_agents_protos.append(
           localharness_pb2.CustomAgent(
               name=subagent.name,
@@ -1144,6 +1150,7 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
               agent_behavior=to_proto_agent_behavior(
                   capabilities.agent_behavior
               ),
+              model=model_proto,
           )
       )
     return custom_agents_protos
