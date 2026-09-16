@@ -23,7 +23,7 @@ import "google/antigravity/proto/genai_json_annotations.proto";
 
 option features = { field_presence : IMPLICIT enum_type : OPEN utf8_validation : NONE };
 
-message LiveInteractionRequestPayload {
+message ExternalClientEvent {
   oneof event_type {
     option (gaos.parsing.subtype_source) = true;
 
@@ -43,7 +43,7 @@ message LiveInteractionRequestPayload {
 message StepEvent {
   .genai.Step step = 1;
 }
-message LiveInteractionResponse {
+message ExternalServerEvent {
   oneof event_type {
     option (gaos.parsing.subtype_source) = true;
 
