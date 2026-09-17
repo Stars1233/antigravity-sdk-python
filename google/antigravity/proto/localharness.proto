@@ -188,6 +188,7 @@ message CustomSystemInstructions {
       string text = 1;
       .antigravity.localharness.CustomSystemInstructions
           .SystemInstructionTemplate template = 2;
+      string builtin_section = 3;
     }
   }
   message SystemInstructionTemplate {
