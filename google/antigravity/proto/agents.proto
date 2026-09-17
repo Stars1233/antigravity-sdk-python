@@ -272,6 +272,7 @@ message AntigravityAgentConfig {
   .genai.AntigravityAgentConfig.RetryConfig retry_config = 21;
   .genai.AntigravityAgentConfig.PolicyConfig policy_config = 22;
   .genai.AntigravityAgentConfig.BudgetConfig budget_config = 23;
+  .genai.AgentBehavior agent_behavior = 24;
 }
 message AgentPolicy {
   bool enable_image_generation = 1;
