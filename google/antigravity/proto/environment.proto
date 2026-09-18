@@ -58,7 +58,7 @@ message EnvironmentConfig {
   repeated .genai.EnvironmentConfig.Source sources = 1;
   string environment_id = 4;
   map<string, .genai.EnvironmentConfig.EnvVar> env = 5 [
-    (gaos.parsing.add_union_value) = "env.value.value",
+    (gaos.parsing.add_union_value) = "env.value",
     (gaos.parsing.flexible_map) = true
   ];
 }
