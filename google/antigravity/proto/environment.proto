@@ -63,6 +63,10 @@ message EnvironmentConfig {
   ];
 }
 message Environment {
+  message StorageQuota {
+    int64 project_used_bytes = 2;
+    int64 project_limit_bytes = 3;
+  }
   enum Status {
     STATUS_UNSPECIFIED = 0;
     ACTIVE = 1 [(gaos.parsing.enum_value_name) = "active"];
