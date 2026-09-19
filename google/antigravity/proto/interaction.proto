@@ -51,15 +51,6 @@ message Interaction {
       .genai.ResponseModality modality = 1;
       int32 tokens = 2;
     }
-    message ModelInvocationTokenCounts {
-      repeated .genai.Interaction.Usage.ModalityTokens prompt_tokens_details =
-          1;
-      repeated .genai.Interaction.Usage.ModalityTokens cache_tokens_details = 2;
-      repeated .genai.Interaction.Usage.ModalityTokens
-          candidates_tokens_details = 3;
-      repeated .genai.Interaction.Usage.ModalityTokens thoughts_tokens_details =
-          4;
-    }
     message GroundingToolCount {
       enum Type {
         TYPE_UNSPECIFIED = 0;
