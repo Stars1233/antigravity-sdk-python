@@ -18,14 +18,17 @@ import asyncio
 import base64
 import datetime
 import enum
+import http.server
 import importlib
 import io
 import json
 import os
 import pathlib
+import socketserver
 import struct
 import subprocess
 import tempfile
+import threading
 import typing
 from typing import Any, Literal, Union
 import unittest
@@ -5354,6 +5357,67 @@ class LocalAgentConfigTest(absltest.TestCase):
         harness_config.compaction_config.token_threshold, 12345
     )
 
+  def test_eval_method(self):
+    config = local_connection_config.LocalAgentConfig(
+        model="gemini-3.1-pro-preview",
+    ).eval()
+    self.assertIsInstance(config, local_connection_config.LocalAgentConfig)
+    self.assertEqual(config.model, "gemini-3.1-pro-preview")
+    self.assertFalse(config.capabilities.enable_subagents)
+    self.assertEqual(
+        config.capabilities.disabled_tools,
+        [types.BuiltinTools.GENERATE_IMAGE],
+    )
+    self.assertIsNone(config.capabilities.enabled_tools)
+    self.assertEqual(config.policies, [policy.allow_all()])
+    self.assertEqual(config.retry_config, types.RetryConfig.benchmark())
+
+    strategy = config.create_strategy(tool_runner=None, hook_runner=None)
+    harness_config = strategy._build_harness_config()
+    self.assertFalse(harness_config.harness_side_tools.subagents.enabled)
+    self.assertFalse(harness_config.harness_side_tools.generate_image.enabled)
+    self.assertFalse(harness_config.harness_side_tools.user_questions.enabled)
+    self.assertTrue(harness_config.harness_side_tools.run_command.enabled)
+    self.assertTrue(harness_config.harness_side_tools.view_file.enabled)
+    self.assertTrue(harness_config.harness_side_tools.write_to_file.enabled)
+    self.assertTrue(harness_config.harness_side_tools.file_edit.enabled)
+    self.assertTrue(harness_config.harness_side_tools.list_dir.enabled)
+    self.assertTrue(harness_config.harness_side_tools.grep_search.enabled)
+    self.assertTrue(harness_config.harness_side_tools.find.enabled)
+    self.assertEqual(
+        harness_config.retry_config.api_retry.max_retries, 0xFFFFFFFF
+    )
+    self.assertEqual(
+        harness_config.retry_config.api_retry.initial_sleep_duration_ms, 1000
+    )
+    self.assertFalse(harness_config.retry_config.HasField("model_output_retry"))
+    self.assertLen(harness_config.policy_config.rules, 1)
+    self.assertEqual(harness_config.policy_config.rules[0].tool, "*")
+    self.assertEqual(
+        harness_config.policy_config.rules[0].decision,
+        localharness_pb2.POLICY_DECISION_ALLOW,
+    )
+
+  def test_eval_method_with_overrides(self):
+    custom_retry = types.RetryConfig(
+        api_retry=types.ModelAPIRetryConfig(max_retries=3)
+    )
+    config = local_connection_config.LocalAgentConfig(
+        model="gemini-3.1-pro-preview",
+        retry_config=custom_retry,
+        policies=policy.confirm_run_command(),
+        capabilities=types.CapabilitiesConfig(
+            disabled_tools=[types.BuiltinTools.SEARCH_WEB],
+        ),
+    ).eval()
+    self.assertEqual(config.retry_config, custom_retry)
+    self.assertLen(config.policies, 2)
+    self.assertFalse(config.capabilities.enable_subagents)
+    self.assertEqual(
+        config.capabilities.disabled_tools,
+        [types.BuiltinTools.SEARCH_WEB],
+    )
+
   def test_safe_defaults_with_default_workspace(self):
     """LocalAgentConfig defaults to CWD workspace when not specified."""
     config = local_connection_config.LocalAgentConfig(
@@ -6150,6 +6214,178 @@ class LocalConnectionSubagentsTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(config.subagents, [])
     self.assertIsInstance(config.capabilities, types.CapabilitiesConfig)
     self.assertIsNone(config.conversation_id)
+
+
+class _EvalProxyServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+  daemon_threads = True
+
+  def __init__(self, server_address, handler_class, workspace_dir: str):
+    super().__init__(server_address, handler_class)
+    self.workspace_dir = workspace_dir
+    self.captured_requests: list[dict[str, Any]] = []
+    self.attempt_counter = 0
+    self.lock = threading.Lock()
+
+
+class _EvalProxyHandler(http.server.BaseHTTPRequestHandler):
+
+  def log_message(self, format_str, *args):
+    pass
+
+  def do_POST(self):  # pylint: disable=invalid-name
+    length = int(self.headers.get("Content-Length", 0))
+    raw_body = self.rfile.read(length)
+    req_json = json.loads(raw_body.decode("utf-8"))
+
+    with self.server.lock:
+      self.server.attempt_counter += 1
+      attempt = self.server.attempt_counter
+      self.server.captured_requests.append({
+          "path": self.path,
+          "attempt": attempt,
+          "json": req_json,
+      })
+
+    # Attempt 1: Return transient HTTP 503 to verify RetryConfig.benchmark()
+    if attempt == 1:
+      err_payload = json.dumps({
+          "error": {
+              "code": 503,
+              "message": "Simulated transient 503 for eval retry test",
+              "status": "UNAVAILABLE",
+          }
+      }).encode("utf-8")
+      self.send_response(503)
+      self.send_header("Content-Type", "application/json")
+      self.send_header("Content-Length", str(len(err_payload)))
+      self.end_headers()
+      self.wfile.write(err_payload)
+      return
+
+    # Check if contents already includes a functionResponse from run_command
+    has_fn_response = False
+    for content in req_json.get("contents", []):
+      for part in content.get("parts", []):
+        if "functionResponse" in part:
+          has_fn_response = True
+
+    if not has_fn_response:
+      # Attempt 2: Return a functionCall to run_command to verify allow_all()
+      candidate_part = {
+          "functionCall": {
+              "name": "run_command",
+              "args": {
+                  "CommandLine": "echo E2E_EVAL_TEST_OK",
+                  "Cwd": self.server.workspace_dir,
+                  "WaitMsBeforeAsync": 5000,
+                  "toolAction": "Running echo",
+                  "toolSummary": "Run echo",
+              },
+          }
+      }
+    else:
+      # Attempt 3: Return final model text after run_command succeeded
+      candidate_part = {"text": "Verified output: E2E_EVAL_TEST_OK"}
+
+    resp_obj = {
+        "candidates": [{
+            "content": {"role": "model", "parts": [candidate_part]},
+            "finishReason": "STOP",
+        }]
+    }
+    if "alt=sse" in self.path:
+      body = f"data: {json.dumps(resp_obj)}\r\n\r\n".encode("utf-8")
+      content_type = "text/event-stream"
+    else:
+      body = json.dumps(resp_obj).encode("utf-8")
+      content_type = "application/json"
+
+    self.send_response(200)
+    self.send_header("Content-Type", content_type)
+    self.send_header("Content-Length", str(len(body)))
+    self.end_headers()
+    self.wfile.write(body)
+
+
+class LocalAgentConfigEvalE2ETest(unittest.IsolatedAsyncioTestCase):
+  """End-to-end verification of LocalAgentConfig.eval() with localharness."""
+
+  async def test_eval_e2e_http_payload_policy_and_retry(self):
+    try:
+      local_connection._get_default_binary_path(None)
+    except RuntimeError:
+      self.skipTest("localharness binary not available in this environment")
+
+    with tempfile.TemporaryDirectory() as workspace_dir:
+      server = _EvalProxyServer(
+          ("127.0.0.1", 0), _EvalProxyHandler, workspace_dir
+      )
+      self.addCleanup(server.shutdown)
+      self.addCleanup(server.server_close)
+      thread = threading.Thread(target=server.serve_forever, daemon=True)
+      thread.start()
+      proxy_url = f"http://127.0.0.1:{server.server_address[1]}"
+
+      config = local_connection_config.LocalAgentConfig(
+          workspaces=[workspace_dir],
+          api_key="test-eval-api-key",
+          model=types.ModelTarget(
+              name="gemini-3-flash-preview",
+              endpoint=types.GeminiAPIEndpoint(
+                  base_url=proxy_url,
+                  api_key="test-eval-api-key",
+              ),
+          ),
+      ).eval()
+
+      strategy = config.create_strategy(tool_runner=None, hook_runner=None)
+      async with strategy:
+        conn = strategy.connect()
+        await conn.send("Run echo E2E_EVAL_TEST_OK")
+        steps = [step async for step in conn.receive_steps()]
+
+      # 1. Verify RetryConfig.benchmark() retried the initial 503 error
+      self.assertEqual(server.attempt_counter, 3)
+
+      # 2. Verify HTTP payload tool declarations omit generate_image,
+      # ask_question, and subagent tools while preserving coding tools.
+      first_req_json = server.captured_requests[0]["json"]
+      declared_tools = []
+      for tool_group in first_req_json.get("tools", []):
+        for decl in tool_group.get("functionDeclarations", []):
+          declared_tools.append(decl["name"])
+      self.assertNotIn("generate_image", declared_tools)
+      self.assertNotIn("ask_question", declared_tools)
+      self.assertNotIn("invoke_subagent", declared_tools)
+      self.assertNotIn("define_subagent", declared_tools)
+      self.assertNotIn("manage_subagents", declared_tools)
+      self.assertNotIn("send_message", declared_tools)
+      self.assertIn("run_command", declared_tools)
+      self.assertIn("view_file", declared_tools)
+      self.assertIn("write_to_file", declared_tools)
+      self.assertIn("replace_file_content", declared_tools)
+
+      # 3. Verify System Instructions omit <subagents>, <subagent_reminder>,
+      # and <knowledge_items>.
+      si_parts = first_req_json.get("systemInstruction", {}).get("parts", [])
+      si_text = "\n".join(p.get("text", "") for p in si_parts)
+      self.assertNotIn("<subagents>", si_text)
+      self.assertNotIn("<subagent_reminder>", si_text)
+      self.assertNotIn("<knowledge_items>", si_text)
+
+      # 4. Verify [policy.allow_all()] executed run_command autonomously and
+      # returned the stdout in the subsequent HTTP request's functionResponse.
+      third_req_json = server.captured_requests[2]["json"]
+      fn_responses = []
+      for content in third_req_json.get("contents", []):
+        for part in content.get("parts", []):
+          if "functionResponse" in part:
+            fn_responses.append(part["functionResponse"])
+      self.assertTrue(fn_responses)
+      self.assertIn("E2E_EVAL_TEST_OK", json.dumps(fn_responses))
+      self.assertTrue(
+          any("E2E_EVAL_TEST_OK" in (s.content or "") for s in steps)
+      )
 
 
 if __name__ == "__main__":

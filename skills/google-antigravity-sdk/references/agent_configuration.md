@@ -282,6 +282,23 @@ For full setup instructions (including installing Gemma 4 26B via
 `litert-lm import`), hardware requirements, and configuration details, see
 [local_models.md](local_models.md).
 
+### Evaluation Configuration Preset
+
+Because the Antigravity SDK can be configured in many ways to satisfy different
+product surfaces, use `.eval()` when benchmarking or evaluating the SDK to apply
+a standardized, product-agnostic default that represents Gemini's core coding
+ability:
+
+```python
+from google.antigravity import Agent, LocalAgentConfig
+
+config = LocalAgentConfig().eval()
+
+async with Agent(config) as agent:
+    response = await agent.chat("Run the test suite and fix any failing tests.")
+    print(await response.text())
+```
+
 ### Custom Environment Variables (Subprocess & Shell Isolation)
 
 You can pass a custom dictionary of environment variables using `env` in `LocalAgentConfig`. These variables override any variables with the same name in the parent process's environment when launching `localharness` and are inherited by shell tool execution (`run_command`):

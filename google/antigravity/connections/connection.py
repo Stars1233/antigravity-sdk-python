@@ -338,6 +338,44 @@ class AgentConfig(abc.ABC, pydantic.BaseModel):
     updates = self._compute_lightweight_presets(user_explicit)
     return cast(Self, self.model_copy(update=updates))
 
+  def eval(self: Self) -> Self:
+    """Returns a copy of this configuration with evaluation presets applied.
+
+    Because the Antigravity SDK can be configured in many ways to power
+    different product surfaces, `.eval()` provides a standardized,
+    product-agnostic default intended to represent Gemini's core coding ability
+    on benchmarks and evaluation suites.
+
+    Specifically, `.eval()` configures the following defaults (while preserving
+    any fields explicitly set by the caller):
+      - Disables `BuiltinTools.GENERATE_IMAGE` (`disabled_tools`).
+      - Disables subagent spawning and orchestration (`enable_subagents=False`).
+      - Sets `policies=[policy.allow_all()]` for autonomous tool execution.
+      - Sets `retry_config=RetryConfig.benchmark()` for resilient API retries.
+    """
+    preset_kwargs: dict[str, Any] = {
+        "disabled_tools": [types.BuiltinTools.GENERATE_IMAGE],
+        "enable_subagents": False,
+    }
+    if (
+        "capabilities" in self.model_fields_set
+        and self.capabilities is not None
+    ):
+      user_capabilities = self.capabilities.model_dump(exclude_unset=True)
+      if "enabled_tools" in user_capabilities:
+        preset_kwargs.pop("disabled_tools", None)
+      preset_kwargs.update(user_capabilities)
+
+    updates: dict[str, Any] = {
+        "capabilities": types.CapabilitiesConfig(**preset_kwargs),
+    }
+    if "policies" not in self.model_fields_set:
+      updates["policies"] = [policy.allow_all()]
+    if "retry_config" not in self.model_fields_set:
+      updates["retry_config"] = types.RetryConfig.benchmark()
+
+    return cast(Self, self.model_copy(update=updates))
+
   @abc.abstractmethod
   def create_strategy(
       self,

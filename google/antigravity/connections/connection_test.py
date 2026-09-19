@@ -376,6 +376,71 @@ class AgentConfigTest(unittest.TestCase):
     self.assertEqual(presets["capabilities"].compaction_threshold, 3000)
     self.assertNotIn("compaction_config", presets)
 
+  def test_eval_method_returns_subclass_instance_with_presets(self):
+    class ConcreteConfig(connection.AgentConfig):
+
+      def create_strategy(self, *, tool_runner, hook_runner):
+        return None
+
+    config = ConcreteConfig(
+        system_instructions="test prompt",
+    ).eval()
+    self.assertIsInstance(config, ConcreteConfig)
+    self.assertEqual(config.system_instructions, "test prompt")
+    self.assertFalse(config.capabilities.enable_subagents)
+    self.assertEqual(
+        config.capabilities.disabled_tools,
+        [types.BuiltinTools.GENERATE_IMAGE],
+    )
+    self.assertIsNone(config.capabilities.enabled_tools)
+    self.assertEqual(config.policies, [policy.allow_all()])
+    self.assertEqual(config.retry_config, types.RetryConfig.benchmark())
+
+  def test_eval_method_preserves_explicit_overrides(self):
+    class ConcreteConfig(connection.AgentConfig):
+
+      def create_strategy(self, *, tool_runner, hook_runner):
+        return None
+
+    custom_policy = policy.Policy(
+        name="custom", tool="run_command", decision=policy.Decision.DENY
+    )
+    custom_retry = types.RetryConfig(
+        api_retry=types.ModelAPIRetryConfig(max_retries=3)
+    )
+    config = ConcreteConfig(
+        policies=[custom_policy],
+        retry_config=custom_retry,
+        capabilities=types.CapabilitiesConfig(
+            enable_subagents=True,
+            disabled_tools=[types.BuiltinTools.SEARCH_WEB],
+        ),
+    ).eval()
+    self.assertEqual(config.policies, [custom_policy])
+    self.assertEqual(config.retry_config, custom_retry)
+    self.assertTrue(config.capabilities.enable_subagents)
+    self.assertEqual(
+        config.capabilities.disabled_tools,
+        [types.BuiltinTools.SEARCH_WEB],
+    )
+
+  def test_eval_method_with_enabled_tools_drops_disabled_tools(self):
+    class ConcreteConfig(connection.AgentConfig):
+
+      def create_strategy(self, *, tool_runner, hook_runner):
+        return None
+
+    config = ConcreteConfig(
+        capabilities=types.CapabilitiesConfig(
+            enabled_tools=[types.BuiltinTools.VIEW_FILE],
+        ),
+    ).eval()
+    self.assertEqual(
+        config.capabilities.enabled_tools, [types.BuiltinTools.VIEW_FILE]
+    )
+    self.assertIsNone(config.capabilities.disabled_tools)
+    self.assertFalse(config.capabilities.enable_subagents)
+
 
 class ResolveActiveToolsTest(unittest.TestCase):
   """Tests for resolve_active_tools helper."""
