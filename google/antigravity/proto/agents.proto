@@ -86,6 +86,7 @@ message SubagentSkillsConfig {
 message AntigravityAgentConfig {
   message GeminiModelOptions {
     string thinking_level = 1;
+    string service_tier = 2;
   }
   message ModelConfig {
     oneof endpoint {
@@ -109,6 +110,7 @@ message AntigravityAgentConfig {
     string project = 3;
     string location = 4;
     .genai.AntigravityAgentConfig.GeminiModelOptions options = 5;
+    string api_key = 6;
   }
   message GemmaEndpoint {
     string base_url = 1;
