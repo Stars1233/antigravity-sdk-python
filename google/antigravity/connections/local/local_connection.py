@@ -1075,6 +1075,9 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
             max_timeout_ms=timeout_ms,
             enable_sandbox=enable_sandbox,
         ),
+        manage_task=localharness_pb2.ManageTaskToolConfig(
+            enabled=types.BuiltinTools.RUN_COMMAND in active_tools
+        ),
         file_edit=localharness_pb2.FileEditToolConfig(
             enabled=types.BuiltinTools.EDIT_FILE in active_tools
         ),
