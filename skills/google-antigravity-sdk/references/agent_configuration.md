@@ -287,7 +287,9 @@ For full setup instructions (including installing Gemma 4 26B via
 Because the Antigravity SDK can be configured in many ways to satisfy different
 product surfaces, use `.eval()` when benchmarking or evaluating the SDK to apply
 a standardized, product-agnostic default that represents Gemini's core coding
-ability:
+ability (disabling image generation and subagents, enabling daemon commands via
+`RunCommandConfig(enable_daemons=True)`, allowing autonomous tool execution, and
+applying `RetryConfig.benchmark()`):
 
 ```python
 from google.antigravity import Agent, LocalAgentConfig

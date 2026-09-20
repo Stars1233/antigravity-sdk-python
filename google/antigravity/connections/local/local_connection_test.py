@@ -6357,12 +6357,16 @@ class LocalAgentConfigEvalE2ETest(unittest.IsolatedAsyncioTestCase):
       self.assertEqual(server.attempt_counter, 3)
 
       # 2. Verify HTTP payload tool declarations omit generate_image,
-      # ask_question, and subagent tools while preserving coding tools.
+      # ask_question, and subagent tools while preserving coding tools
+      # and enabling IsDaemon on run_command.
       first_req_json = server.captured_requests[0]["json"]
       declared_tools = []
+      run_command_decl = None
       for tool_group in first_req_json.get("tools", []):
         for decl in tool_group.get("functionDeclarations", []):
           declared_tools.append(decl["name"])
+          if decl["name"] == "run_command":
+            run_command_decl = decl
       self.assertNotIn("generate_image", declared_tools)
       self.assertNotIn("ask_question", declared_tools)
       self.assertNotIn("invoke_subagent", declared_tools)
@@ -6370,6 +6374,11 @@ class LocalAgentConfigEvalE2ETest(unittest.IsolatedAsyncioTestCase):
       self.assertNotIn("manage_subagents", declared_tools)
       self.assertNotIn("send_message", declared_tools)
       self.assertIn("run_command", declared_tools)
+      self.assertIsNotNone(run_command_decl)
+      self.assertTrue(
+          strategy._build_harness_config().harness_side_tools.run_command.enable_daemon_commands
+      )
+      self.assertIn("IsDaemon", json.dumps(run_command_decl))
       self.assertIn("view_file", declared_tools)
       self.assertIn("write_to_file", declared_tools)
       self.assertIn("replace_file_content", declared_tools)

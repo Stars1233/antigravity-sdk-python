@@ -388,6 +388,8 @@ class AgentConfigTest(unittest.TestCase):
     self.assertIsInstance(config, ConcreteConfig)
     self.assertEqual(config.system_instructions, "test prompt")
     self.assertFalse(config.capabilities.enable_subagents)
+    self.assertIsNotNone(config.capabilities.run_command_config)
+    self.assertTrue(config.capabilities.run_command_config.enable_daemons)
     self.assertEqual(
         config.capabilities.disabled_tools,
         [types.BuiltinTools.GENERATE_IMAGE],
@@ -414,11 +416,20 @@ class AgentConfigTest(unittest.TestCase):
         capabilities=types.CapabilitiesConfig(
             enable_subagents=True,
             disabled_tools=[types.BuiltinTools.SEARCH_WEB],
+            run_command_config=types.RunCommandConfig(
+                enable_daemons=False,
+                timeout_seconds=120.0,
+            ),
         ),
     ).eval()
     self.assertEqual(config.policies, [custom_policy])
     self.assertEqual(config.retry_config, custom_retry)
     self.assertTrue(config.capabilities.enable_subagents)
+    self.assertIsNotNone(config.capabilities.run_command_config)
+    self.assertFalse(config.capabilities.run_command_config.enable_daemons)
+    self.assertEqual(
+        config.capabilities.run_command_config.timeout_seconds, 120.0
+    )
     self.assertEqual(
         config.capabilities.disabled_tools,
         [types.BuiltinTools.SEARCH_WEB],

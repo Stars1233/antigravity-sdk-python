@@ -350,12 +350,16 @@ class AgentConfig(abc.ABC, pydantic.BaseModel):
     any fields explicitly set by the caller):
       - Disables `BuiltinTools.GENERATE_IMAGE` (`disabled_tools`).
       - Disables subagent spawning and orchestration (`enable_subagents=False`).
+      - Enables daemon command execution
+        (`run_command_config=RunCommandConfig(enable_daemons=True)`).
       - Sets `policies=[policy.allow_all()]` for autonomous tool execution.
       - Sets `retry_config=RetryConfig.benchmark()` for resilient API retries.
     """
+    run_cmd_kwargs: dict[str, Any] = {"enable_daemons": True}
     preset_kwargs: dict[str, Any] = {
         "disabled_tools": [types.BuiltinTools.GENERATE_IMAGE],
         "enable_subagents": False,
+        "run_command_config": types.RunCommandConfig(**run_cmd_kwargs),
     }
     if (
         "capabilities" in self.model_fields_set
@@ -364,6 +368,15 @@ class AgentConfig(abc.ABC, pydantic.BaseModel):
       user_capabilities = self.capabilities.model_dump(exclude_unset=True)
       if "enabled_tools" in user_capabilities:
         preset_kwargs.pop("disabled_tools", None)
+      if "run_command_config" in user_capabilities:
+        user_run_cmd = user_capabilities.pop("run_command_config")
+        if isinstance(user_run_cmd, dict):
+          run_cmd_kwargs.update(user_run_cmd)
+          preset_kwargs["run_command_config"] = types.RunCommandConfig(
+              **run_cmd_kwargs
+          )
+        elif user_run_cmd is not None:
+          preset_kwargs["run_command_config"] = user_run_cmd
       preset_kwargs.update(user_capabilities)
 
     updates: dict[str, Any] = {
