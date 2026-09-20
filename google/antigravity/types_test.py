@@ -621,6 +621,7 @@ class BuiltinToolsTest(parameterized.TestCase):
       ),
       ("start_subagent", types.BuiltinTools.START_SUBAGENT, "start_subagent"),
       ("generate_image", types.BuiltinTools.GENERATE_IMAGE, "generate_image"),
+      ("schedule", types.BuiltinTools.SCHEDULE, "schedule"),
       ("finish", types.BuiltinTools.FINISH, "finish"),
   )
   def test_enum_values(self, enum_member, expected_value):

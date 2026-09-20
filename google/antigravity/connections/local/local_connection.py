@@ -1076,7 +1076,13 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
             enable_sandbox=enable_sandbox,
         ),
         manage_task=localharness_pb2.ManageTaskToolConfig(
-            enabled=types.BuiltinTools.RUN_COMMAND in active_tools
+            enabled=(
+                types.BuiltinTools.RUN_COMMAND in active_tools
+                or types.BuiltinTools.SCHEDULE in active_tools
+            )
+        ),
+        schedule=localharness_pb2.ScheduleToolConfig(
+            enabled=types.BuiltinTools.SCHEDULE in active_tools
         ),
         file_edit=localharness_pb2.FileEditToolConfig(
             enabled=types.BuiltinTools.EDIT_FILE in active_tools

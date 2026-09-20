@@ -336,6 +336,7 @@ class BuiltinTools(str, enum.Enum):
     GENERATE_IMAGE: Generate or edit images.
     SEARCH_WEB: Search the web.
     READ_URL_CONTENT: Read content from a URL.
+    SCHEDULE: Schedule a one-shot timer or recurring cron job.
     FINISH: Finish the conversation and return structured output.
   """
 
@@ -351,6 +352,7 @@ class BuiltinTools(str, enum.Enum):
   GENERATE_IMAGE = "generate_image"
   SEARCH_WEB = "search_web"
   READ_URL_CONTENT = "read_url_content"
+  SCHEDULE = "schedule"
   FINISH = "finish"
 
   @classmethod
@@ -366,6 +368,7 @@ class BuiltinTools(str, enum.Enum):
         cls.FIND_FILE,
         cls.VIEW_FILE,
         cls.READ_URL_CONTENT,
+        cls.SCHEDULE,
         cls.FINISH,
     ]
 
@@ -388,6 +391,7 @@ class BuiltinTools(str, enum.Enum):
         cls.GENERATE_IMAGE,
         cls.SEARCH_WEB,
         cls.READ_URL_CONTENT,
+        cls.SCHEDULE,
         cls.FINISH,
     ]
 

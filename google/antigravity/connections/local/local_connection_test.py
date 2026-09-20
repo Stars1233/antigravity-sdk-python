@@ -1932,6 +1932,7 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
     self.assertFalse(config.harness_side_tools.user_questions.enabled)
     self.assertTrue(config.harness_side_tools.run_command.enabled)
     self.assertTrue(config.harness_side_tools.manage_task.enabled)
+    self.assertTrue(config.harness_side_tools.schedule.enabled)
     self.assertTrue(config.harness_side_tools.find.enabled)
     self.assertTrue(config.harness_side_tools.generate_image.enabled)
     # No models, system instructions, workspaces, or skills by default.
@@ -2304,6 +2305,7 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
         capabilities_config=types.CapabilitiesConfig(
             disabled_tools=[
                 types.BuiltinTools.RUN_COMMAND,
+                types.BuiltinTools.SCHEDULE,
                 types.BuiltinTools.ASK_QUESTION,
                 types.BuiltinTools.GENERATE_IMAGE,
             ],
@@ -2311,6 +2313,7 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
     )
     config = strategy._build_harness_config()
     self.assertFalse(config.harness_side_tools.run_command.enabled)
+    self.assertFalse(config.harness_side_tools.schedule.enabled)
     self.assertFalse(config.harness_side_tools.manage_task.enabled)
     self.assertFalse(config.harness_side_tools.user_questions.enabled)
     self.assertFalse(config.harness_side_tools.generate_image.enabled)
@@ -2336,7 +2339,8 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
     )
     config = strategy._build_harness_config()
     self.assertFalse(config.harness_side_tools.run_command.enabled)
-    self.assertFalse(config.harness_side_tools.manage_task.enabled)
+    self.assertTrue(config.harness_side_tools.schedule.enabled)
+    self.assertTrue(config.harness_side_tools.manage_task.enabled)
     self.assertFalse(config.harness_side_tools.user_questions.enabled)
     self.assertTrue(config.harness_side_tools.view_file.enabled)
     self.assertTrue(config.harness_side_tools.read_url_content.enabled)
@@ -2366,6 +2370,7 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
             enable_sandbox=False,
         ),
         manage_task=localharness_pb2.ManageTaskToolConfig(enabled=False),
+        schedule=localharness_pb2.ScheduleToolConfig(enabled=False),
         find=localharness_pb2.FindToolConfig(enabled=False),
         generate_image=localharness_pb2.GenerateImageToolConfig(enabled=False),
         file_edit=localharness_pb2.FileEditToolConfig(enabled=False),
