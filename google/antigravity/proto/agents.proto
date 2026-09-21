@@ -315,5 +315,6 @@ message Agent {
   string base_agent = 2;
   string system_instruction = 3;
   string description = 7;
+  string display_name = 8;
   repeated .genai.Agent.AgentTool tools = 6;
 }
