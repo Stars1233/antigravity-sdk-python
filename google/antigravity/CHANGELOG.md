@@ -7,6 +7,72 @@ All notable changes to the Google Antigravity Python SDK will be documented in t
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.18] - 2026-09-21
+
+This release announces official Antigravity SDK local model support (LiteRT and LocalOpenAI configs are now ready to use), adds a standardized evaluation configuration preset to provide a product-agnostic default for Gemini's coding ability, introduces custom model overrides for subagents, enables schedule and background task management by default, and expands compatibility with Vertex AI service tier handling.
+
+### 🌟 Key Highlights
+- **Antigravity SDK + Local Models Support**: Official local model support is now ready to use with first-class `LiteRTAgentConfig` and `LocalOpenAIAgentConfig` configurations. Developers can execute on-device models with automated lightweight presets or integrate with local OpenAI-compatible endpoints.
+  ```python
+  from google.antigravity import LiteRTAgentConfig, LocalOpenAIAgentConfig
+
+  # On-device execution with LiteRT
+  litert_config = LiteRTAgentConfig(model_path="/path/to/gemma-4-26b.bin")
+
+  # Local OpenAI-compatible server
+  local_config = LocalOpenAIAgentConfig(base_url="http://localhost:8000/v1")
+  ```
+
+- **Standardized Evaluation Preset (`AgentConfig.eval()`)**: Adds a standardized, benchmark-ready preset that configures autonomous permissions, benchmark retry behavior, daemon execution in commands, and strips image generation and subagents to focus on core coding evaluations.
+  ```python
+  from google.antigravity import LocalAgentConfig
+
+  config = LocalAgentConfig().eval()
+  ```
+
+- **Custom Subagent Models**: Allows developers to assign specific model targets to subagents independently of the root agent configuration.
+  ```python
+  from google.antigravity import SubagentConfig
+
+  researcher = SubagentConfig(name="researcher", model="gemini-2.5-pro")
+  ```
+
+- **Built-in Schedule Tool**: Enables the `schedule` tool by default across standard tool groups, permitting agents and subagents to set timers and cron-based background jobs alongside task management.
+  ```python
+  from google.antigravity import BuiltinTools, LocalAgentConfig
+
+  # BuiltinTools.SCHEDULE is enabled by default; exclude if not desired
+  config = LocalAgentConfig(disabled_tools=[BuiltinTools.SCHEDULE])
+  ```
+
+- **Automatic Lightweight Presets for LiteRT**: Instantiating `LiteRTAgentConfig` now automatically applies optimized lightweight presets—including reduced prompt overhead and synchronous context compaction—without requiring an explicit call to `.lightweight()`.
+  ```python
+  from google.antigravity import LiteRTAgentConfig
+
+  # Automatically configures lightweight presets for local execution
+  config = LiteRTAgentConfig(model_path="/path/to/gemma-4-26b.bin")
+  ```
+
+---
+
+### 📋 Detailed Changes
+
+#### Features & Enhancements
+- **Task Management Pairing**: Automatically enables the `manage_task` tool whenever `run_command` or `schedule` is active, allowing background task lifecycle management.
+- **LiteRT & Local Model Examples**: Added getting-started guides and end-to-end examples demonstrating on-device execution with `LiteRTAgentConfig` (Gemma 4 26B) and OpenAI-compatible local endpoints via `LocalOpenAIAgentConfig`.
+- **Sandbox Availability Warning**: Added a session startup warning when `enable_sandbox=True` is requested on an environment or OS backend where sandbox isolation cannot be enforced.
+- **Extended JSON Schema Normalization**: Added schema normalization support for OpenAPI and JSON Schema Draft 7 / 2020-12 keywords (such as `multipleOf`, `prefixItems`, and `dependentSchemas`) and prevented accidental mutation of uppercase sample values.
+- **Optimized ToolRunner Coercion**: Improved type resolution for closure-scoped tools and forward-referenced `ToolContext` parameters, and introduced TypeAdapter caching to accelerate tool call execution.
+- **Top-Level `ServiceTier` Export**: Re-exported `ServiceTier` at the root package namespace for easier import parity.
+
+#### Model & Default Changes
+- **Excluded `ASK_QUESTION` from Default Tools**: Excluded `BuiltinTools.ASK_QUESTION` from `BuiltinTools.default()`. Default configurations run autonomously; agents in headless workflows will no longer attempt interactive user prompts. To re-enable interactive questions, explicitly pass `BuiltinTools.ASK_QUESTION` in `enabled_tools`.
+- **Single Compaction Threshold Dial**: Simplified `CompactionConfig` to a single `token_threshold` property, deprecating legacy context token limits and interval dials. To configure context compaction, specify `CompactionConfig(token_threshold=...)`.
+- **Removed Deprecated `modified_arguments_json`**: Removed the legacy JSON string fallback in tool hook interception in favor of `modified_args`.
+
+#### Bug Fixes
+- **Service Tier Ingestion**: Fixed an unhandled `ValueError` when connecting via gateways reporting unlisted backend service tiers (such as Vertex AI `PROVISIONED_THROUGHPUT`) by safely ignoring unknown tier values while preserving token counts.
+
 ## [0.1.17] - 2026-09-14
 
 This release introduces first-class conversation compaction controls via `CompactionConfig`, delta and forward-looking budget scopes for session resumption, tool output token truncation limits, and expanded arithmetic operations on `UsageMetadata`. It also delivers OS-level terminal sandboxing examples and automated tool wrapper reflection preservation.
