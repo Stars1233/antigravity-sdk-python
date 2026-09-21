@@ -380,7 +380,10 @@ def safe_defaults(handler: AskUserHandler) -> list[Policy]:
   Returns:
     A list of Policies.
   """
-  return [allow(t.value) for t in types.BuiltinTools.read_only()] + [
+  read_only_tools = list(types.BuiltinTools.read_only()) + list(
+      types.BuiltinTools.deprecated()
+  )
+  return [allow(t.value) for t in read_only_tools] + [
       ask_user("*", handler=handler)
   ]
 

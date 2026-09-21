@@ -1927,13 +1927,14 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
     config = strategy._build_harness_config()
     self.assertIsInstance(config, localharness_pb2.HarnessConfig)
     # Default: all harness side tools enabled except user_questions
-    # (ask_question).
+    # (ask_question), find (find_file), and grep_search (search_directory).
     self.assertTrue(config.harness_side_tools.subagents.enabled)
     self.assertFalse(config.harness_side_tools.user_questions.enabled)
     self.assertTrue(config.harness_side_tools.run_command.enabled)
     self.assertTrue(config.harness_side_tools.manage_task.enabled)
     self.assertTrue(config.harness_side_tools.schedule.enabled)
-    self.assertTrue(config.harness_side_tools.find.enabled)
+    self.assertFalse(config.harness_side_tools.find.enabled)
+    self.assertFalse(config.harness_side_tools.grep_search.enabled)
     self.assertTrue(config.harness_side_tools.generate_image.enabled)
     # No models, system instructions, workspaces, or skills by default.
     self.assertEmpty(config.models)
@@ -2319,12 +2320,13 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
     self.assertFalse(config.harness_side_tools.generate_image.enabled)
     # Subagents were not disabled; should still be enabled by default.
     self.assertTrue(config.harness_side_tools.subagents.enabled)
-    # Tools that were not disabled should still be enabled.
-    self.assertTrue(config.harness_side_tools.find.enabled)
+    # Tools that were not disabled should still be enabled (except
+    # off-by-default tools).
+    self.assertFalse(config.harness_side_tools.find.enabled)
     self.assertTrue(config.harness_side_tools.file_edit.enabled)
     self.assertTrue(config.harness_side_tools.view_file.enabled)
     self.assertTrue(config.harness_side_tools.write_to_file.enabled)
-    self.assertTrue(config.harness_side_tools.grep_search.enabled)
+    self.assertFalse(config.harness_side_tools.grep_search.enabled)
     self.assertTrue(config.harness_side_tools.list_dir.enabled)
     self.assertTrue(config.harness_side_tools.search_web.enabled)
 
@@ -2522,7 +2524,8 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
     self.assertTrue(config.harness_side_tools.subagents.enabled)
     self.assertFalse(config.harness_side_tools.user_questions.enabled)
     self.assertTrue(config.harness_side_tools.run_command.enabled)
-    self.assertTrue(config.harness_side_tools.find.enabled)
+    self.assertFalse(config.harness_side_tools.find.enabled)
+    self.assertFalse(config.harness_side_tools.grep_search.enabled)
     self.assertEqual(config.compaction_threshold, 0)
     self.assertFalse(config.HasField("compaction_config"))
 
@@ -2540,6 +2543,21 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
     config = strategy._build_harness_config()
     self.assertTrue(config.harness_side_tools.user_questions.enabled)
     self.assertTrue(config.harness_side_tools.view_file.enabled)
+    self.assertFalse(config.harness_side_tools.run_command.enabled)
+
+  def test_capabilities_config_explicit_find_and_search_enabled(self):
+    """Verifies that explicitly enabling FIND_FILE and SEARCH_DIR enables find and grep_search."""
+    strategy = self._make_strategy(
+        capabilities_config=types.CapabilitiesConfig(
+            enabled_tools=[
+                types.BuiltinTools.FIND_FILE,
+                types.BuiltinTools.SEARCH_DIR,
+            ],
+        )
+    )
+    config = strategy._build_harness_config()
+    self.assertTrue(config.harness_side_tools.find.enabled)
+    self.assertTrue(config.harness_side_tools.grep_search.enabled)
     self.assertFalse(config.harness_side_tools.run_command.enabled)
 
   def test_compaction_config_explicit(self):
@@ -5327,7 +5345,7 @@ class LocalAgentConfigTest(absltest.TestCase):
     self.assertTrue(harness_config.harness_side_tools.write_to_file.enabled)
     self.assertTrue(harness_config.harness_side_tools.file_edit.enabled)
     self.assertTrue(harness_config.harness_side_tools.list_dir.enabled)
-    self.assertTrue(harness_config.harness_side_tools.grep_search.enabled)
+    self.assertFalse(harness_config.harness_side_tools.grep_search.enabled)
     self.assertFalse(harness_config.harness_side_tools.find.enabled)
     self.assertFalse(harness_config.harness_side_tools.user_questions.enabled)
 
@@ -5391,8 +5409,8 @@ class LocalAgentConfigTest(absltest.TestCase):
     self.assertTrue(harness_config.harness_side_tools.write_to_file.enabled)
     self.assertTrue(harness_config.harness_side_tools.file_edit.enabled)
     self.assertTrue(harness_config.harness_side_tools.list_dir.enabled)
-    self.assertTrue(harness_config.harness_side_tools.grep_search.enabled)
-    self.assertTrue(harness_config.harness_side_tools.find.enabled)
+    self.assertFalse(harness_config.harness_side_tools.grep_search.enabled)
+    self.assertFalse(harness_config.harness_side_tools.find.enabled)
     self.assertEqual(
         harness_config.retry_config.api_retry.max_retries, 0xFFFFFFFF
     )

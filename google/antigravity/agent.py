@@ -77,7 +77,9 @@ class Agent:
       # Apply policies
       active_policies = list(self._config.policies)
       cfg = self._config.capabilities
-      read_only_tools = set(types.BuiltinTools.read_only())
+      read_only_tools = set(types.BuiltinTools.read_only()) | set(
+          types.BuiltinTools.deprecated()
+      )
       active_tools = connection_module.resolve_active_tools(cfg)
       has_write_tools = bool(active_tools - read_only_tools)
       has_mcp_servers = bool(self._config.mcp_servers)

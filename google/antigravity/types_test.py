@@ -628,14 +628,22 @@ class BuiltinToolsTest(parameterized.TestCase):
     """Verifies each enum member has the expected string value."""
     self.assertEqual(enum_member, expected_value)
 
-  def test_read_only_covers_all_tools(self):
-    """Verifies read_only + write tools = full enum.
+  def test_deprecated_returns_legacy_search_tools(self):
+    """Verifies deprecated() returns SEARCH_DIR and FIND_FILE."""
+    self.assertEqual(
+        types.BuiltinTools.deprecated(),
+        [types.BuiltinTools.SEARCH_DIR, types.BuiltinTools.FIND_FILE],
+    )
 
-    If a new BuiltinTools member is added without updating either read_only()
-    or this test's write_tools set, the test will fail, forcing the developer
+  def test_read_only_covers_all_tools(self):
+    """Verifies read_only + deprecated + write tools = full enum.
+
+    If a new BuiltinTools member is added without updating either read_only(),
+    deprecated(), or this test's sets, the test will fail, forcing the developer
     to categorize the new tool.
     """
     read_only = set(types.BuiltinTools.read_only())
+    deprecated_tools = set(types.BuiltinTools.deprecated())
     write_tools = {
         types.BuiltinTools.CREATE_FILE,
         types.BuiltinTools.EDIT_FILE,
@@ -646,10 +654,14 @@ class BuiltinToolsTest(parameterized.TestCase):
         types.BuiltinTools.SEARCH_WEB,
     }
     self.assertEqual(
-        read_only | write_tools,
+        read_only | deprecated_tools | write_tools,
         set(types.BuiltinTools),
         "A new BuiltinTools member was added but not categorized in"
-        " read_only() or this test's write_tools set.",
+        " read_only(), deprecated(), or write_tools.",
+    )
+    self.assertFalse(
+        read_only & deprecated_tools,
+        "read_only must not include deprecated tools.",
     )
     self.assertFalse(
         read_only & write_tools,
@@ -657,21 +669,26 @@ class BuiltinToolsTest(parameterized.TestCase):
     )
 
   def test_nondestructive_covers_all_tools(self):
-    """Verifies nondestructive + destructive tools = full enum.
+    """Verifies nondestructive + deprecated + destructive tools = full enum.
 
     If a new BuiltinTools member is added without updating either
-    nondestructive() or this test's destructive_tools set, the test will fail,
+    nondestructive(), deprecated(), or this test's sets, the test will fail,
     forcing the developer to categorize the new tool.
     """
     nondestructive = set(types.BuiltinTools.nondestructive())
+    deprecated_tools = set(types.BuiltinTools.deprecated())
     destructive_tools = {
         types.BuiltinTools.RUN_COMMAND,
     }
     self.assertEqual(
-        nondestructive | destructive_tools,
+        nondestructive | deprecated_tools | destructive_tools,
         set(types.BuiltinTools),
         "A new BuiltinTools member was added but not categorized in"
-        " nondestructive() or this test's destructive_tools set.",
+        " nondestructive(), deprecated(), or destructive_tools.",
+    )
+    self.assertFalse(
+        nondestructive & deprecated_tools,
+        "nondestructive must not include deprecated tools.",
     )
     self.assertFalse(
         nondestructive & destructive_tools,
@@ -691,27 +708,30 @@ class BuiltinToolsTest(parameterized.TestCase):
     """Verifies that none() returns an empty list."""
     self.assertEqual(types.BuiltinTools.none(), [])
 
-  def test_minimal_returns_six_minimal_tools(self):
-    """Verifies that minimal() returns exactly the 6 core software engineering tools."""
+  def test_minimal_returns_five_minimal_tools(self):
+    """Verifies that minimal() returns the 5 core software engineering tools."""
     expected = [
         types.BuiltinTools.RUN_COMMAND,
         types.BuiltinTools.VIEW_FILE,
         types.BuiltinTools.CREATE_FILE,
         types.BuiltinTools.EDIT_FILE,
         types.BuiltinTools.LIST_DIR,
-        types.BuiltinTools.SEARCH_DIR,
     ]
     self.assertEqual(types.BuiltinTools.minimal(), expected)
 
-  def test_default_excludes_ask_question(self):
-    """Verifies that default() returns all tools except ASK_QUESTION."""
-    expected = set(types.BuiltinTools) - {types.BuiltinTools.ASK_QUESTION}
+  def test_default_excludes_ask_question_and_search_tools(self):
+    """Verifies that default() excludes ASK_QUESTION, SEARCH_DIR, and FIND_FILE."""
+    excluded = {
+        types.BuiltinTools.ASK_QUESTION,
+        types.BuiltinTools.SEARCH_DIR,
+        types.BuiltinTools.FIND_FILE,
+    }
+    expected = set(types.BuiltinTools) - excluded
     self.assertEqual(set(types.BuiltinTools.default()), expected)
-    self.assertNotIn(
-        types.BuiltinTools.ASK_QUESTION, types.BuiltinTools.default()
-    )
+    for tool in excluded:
+      self.assertNotIn(tool, types.BuiltinTools.default())
     self.assertLen(
-        types.BuiltinTools.default(), len(types.BuiltinTools) - 1
+        types.BuiltinTools.default(), len(types.BuiltinTools) - len(excluded)
     )
 
 

@@ -359,13 +359,13 @@ class BuiltinTools(str, enum.Enum):
   def read_only(cls) -> list["BuiltinTools"]:
     """Returns tools that only read state (no writes, deletes, or commands).
 
+    Excludes SEARCH_DIR and FIND_FILE, which are disabled by default.
+
     Returns:
-        A list of read-only BuiltinTools.
+        A list of default read-only BuiltinTools.
     """
     return [
         cls.LIST_DIR,
-        cls.SEARCH_DIR,
-        cls.FIND_FILE,
         cls.VIEW_FILE,
         cls.READ_URL_CONTENT,
         cls.SCHEDULE,
@@ -376,13 +376,13 @@ class BuiltinTools(str, enum.Enum):
   def nondestructive(cls) -> list["BuiltinTools"]:
     """Returns tools that cannot delete content.
 
+    Excludes SEARCH_DIR and FIND_FILE, which are disabled by default.
+
     Returns:
-        A list of non-destructive BuiltinTools.
+        A list of default non-destructive BuiltinTools.
     """
     return [
         cls.LIST_DIR,
-        cls.SEARCH_DIR,
-        cls.FIND_FILE,
         cls.VIEW_FILE,
         cls.CREATE_FILE,
         cls.EDIT_FILE,
@@ -433,8 +433,7 @@ class BuiltinTools(str, enum.Enum):
   def minimal(cls) -> list["BuiltinTools"]:
     """Returns the minimal set of software engineering tools.
 
-    Includes run_command, view_file, create_file, edit_file, list_directory, and
-    search_directory.
+    Includes run_command, view_file, create_file, edit_file, and list_directory.
 
     Returns:
         A list of minimal BuiltinTools.
@@ -445,19 +444,36 @@ class BuiltinTools(str, enum.Enum):
         cls.CREATE_FILE,
         cls.EDIT_FILE,
         cls.LIST_DIR,
+    ]
+
+  @classmethod
+  def deprecated(cls) -> list["BuiltinTools"]:
+    """Returns deprecated/legacy builtin tools that are disabled by default.
+
+    Includes SEARCH_DIR and FIND_FILE, which are excluded from default tool
+    collections and only enabled when explicitly requested via `enabled_tools`.
+
+    Returns:
+        A list of deprecated BuiltinTools.
+    """
+    return [
         cls.SEARCH_DIR,
+        cls.FIND_FILE,
     ]
 
   @classmethod
   def default(cls) -> list["BuiltinTools"]:
     """Returns the default set of builtin tools for autonomous agents.
 
-    Excludes ASK_QUESTION because autonomous agents cannot prompt the user.
+    Excludes ASK_QUESTION (because autonomous agents cannot prompt the user) as
+    well as deprecated tools (SEARCH_DIR and FIND_FILE, which are off by
+    default).
 
     Returns:
         A list of default BuiltinTools.
     """
-    return [t for t in cls if t != cls.ASK_QUESTION]
+    excluded = {cls.ASK_QUESTION, *cls.deprecated()}
+    return [t for t in cls if t not in excluded]
 
 
 class CapabilitiesConfig(pydantic.BaseModel):
@@ -492,16 +508,17 @@ class CapabilitiesConfig(pydantic.BaseModel):
       overhead for small-context models. Defaults to AgentBehavior.AUTONOMOUS.
     enabled_tools: Explicit allowlist of builtin tools to enable. Mutually
       exclusive with disabled_tools. When None, the harness defaults are used
-      (all tools enabled except ASK_QUESTION). Disabled tools are removed
-      from the model's context, saving tokens and preventing the model from
-      even considering them.
+      (all tools enabled except ASK_QUESTION, SEARCH_DIR, and FIND_FILE).
+      Disabled tools are removed from the model's context, saving tokens and
+      preventing the model from even considering them.
     disabled_tools: Explicit denylist of builtin tools to disable. Mutually
       exclusive with enabled_tools. When specified, the given tools are
-      subtracted from default() (which already excludes ASK_QUESTION).
-      When None, all default tools are enabled. Disabled tools are removed
-      from the model's context, saving tokens and preventing the model from
-      even considering them. Note that to enable ASK_QUESTION, it must be
-      explicitly included in enabled_tools.
+      subtracted from default() (which already excludes ASK_QUESTION,
+      SEARCH_DIR, and FIND_FILE). When None, all default tools are enabled.
+      Disabled tools are removed from the model's context, saving tokens and
+      preventing the model from even considering them. Note that to enable
+      ASK_QUESTION, SEARCH_DIR, or FIND_FILE, they must be explicitly included
+      in enabled_tools.
     compaction_threshold: (Deprecated) Configure
       CompactionConfig(token_threshold=...) directly on AgentConfig instead.
     finish_tool_schema_json: Optional JSON schema string for the finish tool.

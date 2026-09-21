@@ -387,6 +387,26 @@ class AgentTest(unittest.IsolatedAsyncioTestCase):
       "local.local_connection.LocalConnectionStrategy"
   )
   @mock.patch.object(conversation.Conversation, "create")
+  async def test_policy_guard_deprecated_read_only_explicit_passes(
+      self, mock_conv_create, mock_strategy_class
+  ):
+    """No guard when deprecated read-only tools are explicitly enabled."""
+    del mock_conv_create
+    mock_strategy_class.return_value = mock.MagicMock(stop=mock.AsyncMock())
+    config = local_connection.LocalAgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(
+            enabled_tools=types.BuiltinTools.deprecated(),
+        ),
+    )
+    async with agent.Agent(config):
+      pass  # Should not raise.
+
+  @mock.patch(
+      "google.antigravity.connections."
+      "local.local_connection.LocalConnectionStrategy"
+  )
+  @mock.patch.object(conversation.Conversation, "create")
   async def test_policy_guard_disabling_all_default_write_tools_passes(
       self, mock_conv_create, mock_strategy_class
   ):

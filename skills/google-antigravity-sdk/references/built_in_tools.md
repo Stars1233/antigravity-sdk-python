@@ -1,8 +1,10 @@
 # Built-in Tools Reference
 
-In the `LocalAgentConfig` (used for local development), all built-in tools are
-**enabled** by default. However, `run_command` is **denied** by the default
-`confirm_run_command()` policy — all other tools are allowed. See
+In the `LocalAgentConfig` (used for local development), most built-in tools are
+**enabled** by default (except `ASK_QUESTION`, `SEARCH_DIR`, and `FIND_FILE`,
+which are disabled by default and can be opted into via `enabled_tools`).
+However, `run_command` is **denied** by the default
+`confirm_run_command()` policy — all other enabled tools are allowed. See
 [Safety Policies](safety_policies.md) to customize this behavior.
 
 > [!NOTE]
@@ -24,8 +26,10 @@ descriptions.
 | `BuiltinTools.LIST_DIR`       | `list_directory`   | List directory         |
 :                               :                    : contents.              :
 | `BuiltinTools.SEARCH_DIR`     | `search_directory` | Search within          |
-:                               :                    : directories.           :
-| `BuiltinTools.FIND_FILE`      | `find_file`        | Find files by name.    |
+:                               :                    : directories (off by    :
+:                               :                    : default).              :
+| `BuiltinTools.FIND_FILE`      | `find_file`        | Find files by name     |
+:                               :                    : (off by default).      :
 | `BuiltinTools.VIEW_FILE`      | `view_file`        | View file contents.    |
 | `BuiltinTools.FINISH`         | `finish`           | Finish and return      |
 :                               :                    : output.                :
