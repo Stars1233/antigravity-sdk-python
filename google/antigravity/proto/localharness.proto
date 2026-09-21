@@ -186,21 +186,19 @@ message CustomSystemInstructions {
   message Part {
     oneof part {
       string text = 1;
-      .antigravity.localharness.CustomSystemInstructions
-          .SystemInstructionTemplate template = 2;
+      .antigravity.localharness.SystemInstructionTemplate template = 2;
       string builtin_section = 3;
     }
   }
-  message SystemInstructionTemplate {
-    message Arg {
-      string name = 1;
-      string value = 2;
-    }
-    string template_name = 1;
-    repeated .antigravity.localharness.CustomSystemInstructions
-        .SystemInstructionTemplate.Arg args = 2;
-  }
   repeated .antigravity.localharness.CustomSystemInstructions.Part part = 1;
+}
+message SystemInstructionTemplate {
+  message Arg {
+    string name = 1;
+    string value = 2;
+  }
+  string name = 1;
+  repeated .antigravity.localharness.SystemInstructionTemplate.Arg args = 2;
 }
 message AppendedSystemInstructions {
   message Section {
