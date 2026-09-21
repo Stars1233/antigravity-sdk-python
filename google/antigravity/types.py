@@ -359,12 +359,13 @@ class BuiltinTools(str, enum.Enum):
   def read_only(cls) -> list["BuiltinTools"]:
     """Returns tools that only read state (no writes, deletes, or commands).
 
-    Excludes LIST_DIR, SEARCH_DIR, and FIND_FILE, which are disabled by default.
+    Excludes SEARCH_DIR and FIND_FILE, which are disabled by default.
 
     Returns:
         A list of default read-only BuiltinTools.
     """
     return [
+        cls.LIST_DIR,
         cls.VIEW_FILE,
         cls.READ_URL_CONTENT,
         cls.SCHEDULE,
@@ -375,12 +376,13 @@ class BuiltinTools(str, enum.Enum):
   def nondestructive(cls) -> list["BuiltinTools"]:
     """Returns tools that cannot delete content.
 
-    Excludes LIST_DIR, SEARCH_DIR, and FIND_FILE, which are disabled by default.
+    Excludes SEARCH_DIR and FIND_FILE, which are disabled by default.
 
     Returns:
         A list of default non-destructive BuiltinTools.
     """
     return [
+        cls.LIST_DIR,
         cls.VIEW_FILE,
         cls.CREATE_FILE,
         cls.EDIT_FILE,
@@ -431,7 +433,7 @@ class BuiltinTools(str, enum.Enum):
   def minimal(cls) -> list["BuiltinTools"]:
     """Returns the minimal set of software engineering tools.
 
-    Includes run_command, view_file, create_file, and edit_file.
+    Includes run_command, view_file, create_file, edit_file, and list_directory.
 
     Returns:
         A list of minimal BuiltinTools.
@@ -441,21 +443,20 @@ class BuiltinTools(str, enum.Enum):
         cls.VIEW_FILE,
         cls.CREATE_FILE,
         cls.EDIT_FILE,
+        cls.LIST_DIR,
     ]
 
   @classmethod
   def deprecated(cls) -> list["BuiltinTools"]:
     """Returns deprecated/legacy builtin tools that are disabled by default.
 
-    Includes LIST_DIR, SEARCH_DIR, and FIND_FILE, which are excluded from
-    default tool collections and only enabled when explicitly requested via
-    `enabled_tools`.
+    Includes SEARCH_DIR and FIND_FILE, which are excluded from default tool
+    collections and only enabled when explicitly requested via `enabled_tools`.
 
     Returns:
         A list of deprecated BuiltinTools.
     """
     return [
-        cls.LIST_DIR,
         cls.SEARCH_DIR,
         cls.FIND_FILE,
     ]
@@ -465,8 +466,8 @@ class BuiltinTools(str, enum.Enum):
     """Returns the default set of builtin tools for autonomous agents.
 
     Excludes ASK_QUESTION (because autonomous agents cannot prompt the user) as
-    well as deprecated tools (LIST_DIR, SEARCH_DIR, and FIND_FILE, which are off
-    by default).
+    well as deprecated tools (SEARCH_DIR and FIND_FILE, which are off by
+    default).
 
     Returns:
         A list of default BuiltinTools.
