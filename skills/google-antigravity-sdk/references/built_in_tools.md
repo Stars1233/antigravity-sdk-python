@@ -1,8 +1,9 @@
 # Built-in Tools Reference
 
 In the `LocalAgentConfig` (used for local development), most built-in tools are
-**enabled** by default (except `ASK_QUESTION`, `SEARCH_DIR`, and `FIND_FILE`,
-which are disabled by default and can be opted into via `enabled_tools`).
+**enabled** by default (except `ASK_QUESTION`, `LIST_DIR`, `SEARCH_DIR`, and
+`FIND_FILE`, which are disabled by default and can be opted into via
+`enabled_tools`).
 However, `run_command` is **denied** by the default
 `confirm_run_command()` policy — all other enabled tools are allowed. See
 [Safety Policies](safety_policies.md) to customize this behavior.
@@ -24,7 +25,8 @@ descriptions.
 | Tool Enum                     | Tool Name          | Description            |
 | ----------------------------- | ------------------ | ---------------------- |
 | `BuiltinTools.LIST_DIR`       | `list_directory`   | List directory         |
-:                               :                    : contents.              :
+:                               :                    : contents (off by       :
+:                               :                    : default).              :
 | `BuiltinTools.SEARCH_DIR`     | `search_directory` | Search within          |
 :                               :                    : directories (off by    :
 :                               :                    : default).              :
