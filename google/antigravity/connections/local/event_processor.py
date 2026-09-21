@@ -1033,27 +1033,58 @@ class LocalHarnessEventProcessor:
           return
 
       # Apply the decision.
-      if p.decision == policy_lib.Decision.ASK_USER:
-        allow = await policy_lib._execute_ask_user(p, tool_call)
+      if p.ask_user is not None:
+        reason = request.reason or p.reason
+        allow = await policy_lib._execute_ask_user(  # pylint: disable=protected-access
+            p, tool_call, reason=reason
+        )
+        deny_msg = (
+            ""
+            if allow
+            else (reason or f"Denied by user ({p.name or p.tool}).")
+        )
         await self._send_policy_decision_response(
             request.request_id,
-            outcome=localharness_pb2.POLICY_EVALUATION_OUTCOME_ALLOW
-            if allow
-            else localharness_pb2.POLICY_EVALUATION_OUTCOME_DENY,
-            deny_reason=""
-            if allow
-            else f"Denied by user ({p.name or p.tool}).",
+            outcome=(
+                localharness_pb2.POLICY_EVALUATION_OUTCOME_ALLOW
+                if allow
+                else localharness_pb2.POLICY_EVALUATION_OUTCOME_DENY
+            ),
+            deny_reason=deny_msg,
         )
-      elif p.decision == policy_lib.Decision.DENY:
+      elif p.decision == policy_lib.Decision.ASK_USER:
+        deny_msg = (
+            f"Policy '{p.name or p.tool}' requires ask_user handler, but none"
+            " was provided."
+        )
+        logging.error(deny_msg)
         await self._send_policy_decision_response(
             request.request_id,
             outcome=localharness_pb2.POLICY_EVALUATION_OUTCOME_DENY,
-            deny_reason=f"Denied by policy '{p.name or p.tool}'.",
+            deny_reason=deny_msg,
+        )
+      elif p.decision == policy_lib.Decision.DENY:
+        deny_msg = request.reason or f"Denied by policy '{p.name or p.tool}'."
+        await self._send_policy_decision_response(
+            request.request_id,
+            outcome=localharness_pb2.POLICY_EVALUATION_OUTCOME_DENY,
+            deny_reason=deny_msg,
         )
       elif p.decision == policy_lib.Decision.APPROVE:
         await self._send_policy_decision_response(
             request.request_id,
             outcome=localharness_pb2.POLICY_EVALUATION_OUTCOME_ALLOW,
+        )
+      else:
+        deny_msg = (
+            f"Unhandled policy decision '{p.decision}' for"
+            f" '{p.name or p.tool}'."
+        )
+        logging.error(deny_msg)
+        await self._send_policy_decision_response(
+            request.request_id,
+            outcome=localharness_pb2.POLICY_EVALUATION_OUTCOME_DENY,
+            deny_reason=deny_msg,
         )
     except Exception as e:  # pylint: disable=broad-except
       logging.exception("Policy evaluation failed for rule_id=%s", rule_id)

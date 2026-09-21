@@ -26,8 +26,10 @@ Covers:
 """
 
 from collections.abc import Mapping
+import inspect
 from typing import Any
 import unittest
+from unittest import mock
 
 from absl.testing import absltest
 import pydantic
@@ -1053,6 +1055,153 @@ class ToPolicyConfigProtoTest(absltest.TestCase):
     self.assertIn("rule_3", dynamic_policy_map)  # index 3 = ask_user("d", ...)
     self.assertNotIn("rule_0", dynamic_policy_map)
     self.assertNotIn("rule_2", dynamic_policy_map)
+
+
+class ExecuteAskUserTest(unittest.IsolatedAsyncioTestCase):
+  """Tests _execute_ask_user handler dispatch and reason handling."""
+
+  async def test_execute_ask_user_with_keyword_reason(self):
+    received_reason = []
+
+    def handler_with_reason(tc, reason=""):
+      del tc
+      received_reason.append(reason)
+      return True
+
+    p = policy.ask_user("run_command", handler=handler_with_reason)
+    res = await policy._execute_ask_user(
+        p, _make_tool_call("run_command"), reason="Command is dangerous"
+    )
+    self.assertTrue(res)
+    self.assertEqual(received_reason, ["Command is dangerous"])
+
+  async def test_execute_ask_user_positional_two_args(self):
+    received = []
+
+    def handler_positional(tc, r):
+      del tc
+      received.append(r)
+      return True
+
+    p = policy.ask_user("run_command", handler=handler_positional)
+    res = await policy._execute_ask_user(
+        p, _make_tool_call("run_command"), reason="Positional reason"
+    )
+    self.assertTrue(res)
+    self.assertEqual(received, ["Positional reason"])
+
+  async def test_execute_ask_user_var_kwargs(self):
+    received = {}
+
+    def handler_kwargs(tc, **kwargs):
+      del tc
+      received.update(kwargs)
+      return True
+
+    p = policy.ask_user("run_command", handler=handler_kwargs)
+    res = await policy._execute_ask_user(
+        p, _make_tool_call("run_command"), reason="Kwargs reason"
+    )
+    self.assertTrue(res)
+    self.assertEqual(received.get("reason"), "Kwargs reason")
+
+  async def test_execute_ask_user_single_arg(self):
+    called = []
+
+    def handler_single_arg(tc):
+      called.append(tc.name)
+      return True
+
+    p = policy.ask_user("run_command", handler=handler_single_arg)
+    res = await policy._execute_ask_user(
+        p, _make_tool_call("run_command"), reason="Command is dangerous"
+    )
+    self.assertTrue(res)
+    self.assertEqual(called, ["run_command"])
+
+  async def test_execute_ask_user_no_signature_calls_without_reason(self):
+    called = []
+
+    class CustomCallable:
+
+      def __call__(self, tc):
+        called.append(tc.name)
+        return True
+
+    custom = CustomCallable()
+    # Mock inspect.signature to raise TypeError for this callable
+    with mock.patch.object(
+        inspect, "signature", side_effect=TypeError("No signature")
+    ):
+      p = policy.ask_user("run_command", handler=custom)
+      res = await policy._execute_ask_user(
+          p, _make_tool_call("run_command"), reason="Command is dangerous"
+      )
+      self.assertTrue(res)
+      self.assertEqual(called, ["run_command"])
+
+  async def test_execute_ask_user_positional_only_reason(self):
+    received = []
+
+    def handler_pos_only(tc, reason, /):
+      del tc
+      received.append(reason)
+      return True
+
+    p = policy.ask_user("run_command", handler=handler_pos_only)
+    res = await policy._execute_ask_user(
+        p, _make_tool_call("run_command"), reason="Positional only reason"
+    )
+    self.assertTrue(res)
+    self.assertEqual(received, ["Positional only reason"])
+
+  async def test_execute_ask_user_unrelated_keyword_only(self):
+    called = []
+
+    def handler_kw_only(tc, *, some_other_kw=True):
+      called.append((tc.name, some_other_kw))
+      return True
+
+    p = policy.ask_user("run_command", handler=handler_kw_only)
+    res = await policy._execute_ask_user(
+        p, _make_tool_call("run_command"), reason="Ignored reason"
+    )
+    self.assertTrue(res)
+    self.assertEqual(called, [("run_command", True)])
+
+  async def test_ask_user_with_custom_reason(self):
+    received_reasons = []
+
+    def handler_with_reason(tc, reason=""):
+      del tc
+      received_reasons.append(reason)
+      return False
+
+    p = policy.ask_user(
+        "run_command",
+        handler=handler_with_reason,
+        reason="Requires approval before modifying production state",
+    )
+    self.assertEqual(
+        p.reason, "Requires approval before modifying production state"
+    )
+
+    proto_config, _ = policy._to_policy_config_proto([p])
+    self.assertEqual(
+        proto_config.rules[0].deny_reason,
+        "Requires approval before modifying production state",
+    )
+
+    hook = policy.enforce([p])
+    res = await hook.run(hooks.HookContext(), _make_tool_call("run_command"))
+    self.assertFalse(res.allow)
+    self.assertEqual(
+        received_reasons,
+        ["Requires approval before modifying production state"],
+    )
+    self.assertEqual(
+        res.message, "Requires approval before modifying production state"
+    )
 
 
 if __name__ == "__main__":

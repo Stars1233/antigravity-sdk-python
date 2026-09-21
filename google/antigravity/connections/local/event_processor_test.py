@@ -900,11 +900,13 @@ def _make_policy_decision_request(
     tool_name: str = "run_command",
     arguments_json: str = "{}",
     server_name: str = "",
+    reason: str = "",
 ) -> localharness_pb2.OutputEvent:
   return localharness_pb2.OutputEvent(
       policy_decision_request=localharness_pb2.PolicyDecisionRequest(
           request_id=request_id,
           rule_id=rule_id,
+          reason=reason,
           tool_args=localharness_pb2.PreToolArgs(
               tool_name=tool_name,
               arguments_json=arguments_json,
@@ -989,6 +991,54 @@ class PolicyDecisionTest(unittest.IsolatedAsyncioTestCase):
     )
     self.assertIn("Denied by user", resp.deny_reason)
 
+  async def test_ask_user_deny_with_reason(self):
+    """ASK_USER handler returns False + reason from request -> reason propagated."""
+    p = policy.ask_user(
+        "run_command", handler=lambda tc: False, name="ask-deny"
+    )
+    _, pmap = policy._to_policy_config_proto([p])
+    event = _make_policy_decision_request(
+        rule_id="rule_0", reason="Flagged by model"
+    )
+    resp = await self._process_and_get_response(pmap, event)
+    self.assertEqual(
+        resp.outcome, localharness_pb2.POLICY_EVALUATION_OUTCOME_DENY
+    )
+    self.assertEqual(resp.deny_reason, "Flagged by model")
+
+  async def test_when_predicate_matches_deny_with_reason(self):
+    """when returns True + DENY + reason from request -> reason propagated."""
+    p = policy.deny("run_command", when=lambda args: True, name="block-all")
+    _, pmap = policy._to_policy_config_proto([p])
+    event = _make_policy_decision_request(
+        rule_id="rule_0", reason="Policy violation"
+    )
+    resp = await self._process_and_get_response(pmap, event)
+    self.assertEqual(
+        resp.outcome, localharness_pb2.POLICY_EVALUATION_OUTCOME_DENY
+    )
+    self.assertEqual(resp.deny_reason, "Policy violation")
+
+  async def test_ask_user_passes_reason_to_handler(self):
+    """ASK_USER handler receives reason from PolicyDecisionRequest."""
+    captured = []
+
+    def handler(tc, reason=""):
+      del tc
+      captured.append(reason)
+      return True
+
+    p = policy.ask_user("run_command", handler=handler, name="ask-reason")
+    _, pmap = policy._to_policy_config_proto([p])
+    event = _make_policy_decision_request(
+        rule_id="rule_0", reason="Flagged by safety analysis"
+    )
+    resp = await self._process_and_get_response(pmap, event)
+    self.assertEqual(
+        resp.outcome, localharness_pb2.POLICY_EVALUATION_OUTCOME_ALLOW
+    )
+    self.assertEqual(captured, ["Flagged by safety analysis"])
+
   async def test_ask_user_with_when_no_match(self):
     """ASK_USER + when=False -> OUTCOME_NO_MATCH (handler never called)."""
     handler_mock = mock.Mock(return_value=True)
@@ -1060,6 +1110,21 @@ class PolicyDecisionTest(unittest.IsolatedAsyncioTestCase):
         resp.outcome, localharness_pb2.POLICY_EVALUATION_OUTCOME_DENY
     )
     self.assertEqual(captured.get("CommandLine"), "echo hello")
+
+  async def test_ask_user_without_handler_fails_closed(self):
+    """ASK_USER policy without ask_user handler -> OUTCOME_DENY."""
+    p = policy.Policy(
+        tool="run_command",
+        decision=policy.Decision.ASK_USER,
+        name="ask-no-handler",
+    )
+    pmap = {"rule_0": p}
+    event = _make_policy_decision_request(rule_id="rule_0")
+    resp = await self._process_and_get_response(pmap, event)
+    self.assertEqual(
+        resp.outcome, localharness_pb2.POLICY_EVALUATION_OUTCOME_DENY
+    )
+    self.assertIn("requires ask_user handler", resp.deny_reason)
 
 
 if __name__ == "__main__":

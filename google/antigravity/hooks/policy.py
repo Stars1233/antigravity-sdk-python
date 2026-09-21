@@ -73,7 +73,7 @@ import inspect
 import logging
 import os
 import typing
-from typing import Any, Union, overload
+from typing import Any, Optional, Union, overload
 
 import pydantic
 
@@ -89,9 +89,18 @@ _logger = logging.getLogger(__name__)
 # and returns whether the policy applies. Supports both sync and async.
 Predicate = Callable[..., bool | Awaitable[bool]]
 
-# An ask_user handler receives the full ToolCall and returns whether the
-# user approved execution. Supports both sync and async callables.
-AskUserHandler = Callable[[types.ToolCall], bool | Awaitable[bool]]
+# An ask_user handler receives the pending ToolCall and an optional reason
+# string supplied by the policy evaluation runtime (e.g. safety assessment in
+# auto policy mode) explaining why confirmation is requested, returning whether
+# the user approved execution. Supports both sync and async.
+#
+# Custom handlers can define signatures such as:
+#   def my_handler(tc: types.ToolCall, reason: str = "") -> bool: ...
+#   def my_handler(tc: types.ToolCall) -> bool: ...
+AskUserHandler = Union[
+    Callable[[types.ToolCall], Union[bool, Awaitable[bool]]],
+    Callable[[types.ToolCall, Optional[str]], Union[bool, Awaitable[bool]]],
+]
 
 _WILDCARD = "*"
 WORKSPACE_ONLY_POLICY_NAME = "workspace_only"
@@ -118,6 +127,8 @@ class Policy:
     ask_user: Handler invoked when decision is ASK_USER. Must be provided for
       ASK_USER policies (validated at enforce() time).
     name: Human-readable label used in logging and deny reasons.
+    reason: Optional human-readable explanation for why the policy matched
+      (forwarded to ask_user handlers or used as a deny reason).
   """
 
   tool: str
@@ -125,6 +136,7 @@ class Policy:
   when: Predicate | None = None
   ask_user: AskUserHandler | None = None
   name: str = ""
+  reason: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +152,7 @@ def _mcp_policies(
     when: Predicate | None = None,
     name: str = "",
     handler: AskUserHandler | None = None,
+    reason: str = "",
 ) -> list[Policy]:
   """Generates MCP-specific policies.
 
@@ -155,6 +168,7 @@ def _mcp_policies(
     when: Optional argument predicate.
     name: Optional human-readable label.
     handler: Optional AskUserHandler for ASK_USER policies.
+    reason: Optional human-readable explanation for why the policy matched.
 
   Returns:
     A list of Policy objects.
@@ -178,6 +192,7 @@ def _mcp_policies(
             when=when,
             name=policy_name,
             ask_user=handler,
+            reason=reason,
         )
     ]
 
@@ -193,6 +208,7 @@ def _mcp_policies(
             when=when,
             name=policy_name,
             ask_user=handler,
+            reason=reason,
         )
     )
   return policies
@@ -299,6 +315,7 @@ def ask_user(
     handler: AskUserHandler | None = None,
     when: Predicate | None = None,
     name: str = "",
+    reason: str = "",
 ) -> Policy:
   ...
 
@@ -311,6 +328,7 @@ def ask_user(
     handler: AskUserHandler | None = None,
     when: Predicate | None = None,
     name: str = "",
+    reason: str = "",
 ) -> list[Policy]:
   ...
 
@@ -322,6 +340,7 @@ def ask_user(
     handler: AskUserHandler | None = None,
     when: Predicate | None = None,
     name: str = "",
+    reason: str = "",
 ) -> Any:
   """Creates an ASK_USER policy.
 
@@ -329,9 +348,14 @@ def ask_user(
     tool: Tool name, "*" for all tools, or BaseMcpServerConfig.
     mcp_tools: Optional list of tool names if BaseMcpServerConfig is provided.
     handler: Optional callable invoked to obtain user approval for the tool
-      call. If omitted, confirmation is delegated to the host platform.
+      call. If omitted, confirmation is delegated to the host platform. Custom
+      handlers receive the pending `ToolCall` and can optionally accept a
+      `reason: str = ""` parameter explaining why confirmation was requested by
+      the runtime (e.g. from safety assessment in auto policy mode).
     when: Optional argument predicate.
     name: Human-readable label.
+    reason: Optional human-readable explanation passed to the handler when
+      prompting the user.
 
   Returns:
     A Policy or a list of Policies.
@@ -345,6 +369,7 @@ def ask_user(
         when=when,
         ask_user=handler,
         name=name,
+        reason=reason,
     )
 
   return _mcp_policies(  # pytype: disable=bad-return-type  # False positive: pytype fails to narrow overloaded types in implementation body.
@@ -354,6 +379,7 @@ def ask_user(
       when=when,
       name=name,
       handler=handler,
+      reason=reason,
   )
 
 
@@ -511,10 +537,33 @@ async def _evaluate_predicate(
   return bool(result)
 
 
-async def _execute_ask_user(policy: Policy, tool_call: types.ToolCall) -> bool:
+async def _execute_ask_user(
+    policy: Policy,
+    tool_call: types.ToolCall,
+    reason: str = "",
+) -> bool:
   """Invokes the policy's ask_user handler, propagating exceptions."""
   assert policy.ask_user is not None
-  result = policy.ask_user(tool_call)
+  handler = typing.cast(Callable[..., Any], policy.ask_user)
+  try:
+    sig = inspect.signature(handler)
+  except (ValueError, TypeError):
+    sig = None
+
+  if sig is not None:
+    try:
+      bound = sig.bind(tool_call, reason=reason)
+    except TypeError:
+      try:
+        bound = sig.bind(tool_call, reason)
+      except TypeError:
+        bound = sig.bind(tool_call)
+    result = handler(*bound.args, **bound.kwargs)
+  else:
+    # If signature inspection is unavailable (e.g. C extensions or built-ins),
+    # call without reason for stability.
+    result = handler(tool_call)
+
   if inspect.isawaitable(result):
     result = await result
   return bool(result)
@@ -576,13 +625,14 @@ class _PolicyDecideHook(hooks.PreToolCallDecideHook):
               label,
               tool_call.name,
           )
-          approved = await _execute_ask_user(p, tool_call)
+          approved = await _execute_ask_user(p, tool_call, reason=p.reason)
           if approved:
             return hooks.HookResult(allow=True)
           return hooks.HookResult(
               allow=False,
               message=(
-                  f"User denied tool '{tool_call.name}' (policy '{label}')."
+                  p.reason
+                  or f"User denied tool '{tool_call.name}' (policy '{label}')."
               ),
           )
       except Exception as e:  # pylint: disable=broad-exception-caught
@@ -712,6 +762,7 @@ def _to_policy_config_proto(
             name=p.name or p.tool,
             is_dynamic=is_dynamic,
             rule_id=rule_id,
+            deny_reason=p.reason,
         )
     )
 

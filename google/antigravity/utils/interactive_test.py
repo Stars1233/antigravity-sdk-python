@@ -685,8 +685,53 @@ class SpinnerInteractionTest(unittest.IsolatedAsyncioTestCase):
         mock_resume.assert_called()
         self.assertTrue(spinner.is_running)
 
+  @mock.patch("builtins.print")
+  @mock.patch("builtins.input")
+  async def test_ask_user_handler_sanitizes_terminal_output(
+      self, mock_input, mock_print
+  ):
+    """Verifies ANSI escape sequences and control chars are stripped."""
+    mock_input.return_value = "y"
+    tc = types.ToolCall(
+        name="run_\x1b[31mcommand\x07",
+        args={"cmd": "echo\r\x1b[2A\x1b[2K spoofed"},
+    )
+    reason = "Assessor flagged:\x1b[32m risky\x08\x00"
+    res = await interactive.ask_user_handler(tc, reason=reason)
+    self.assertTrue(res)
+    printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list)
+    self.assertNotIn("\x1b", printed)
+    self.assertNotIn("\r", printed)
+    self.assertNotIn("\x08", printed)
+    self.assertIn("run_command", printed)
+    self.assertIn("Assessor flagged: risky", printed)
+
+  @mock.patch("builtins.print")
+  @mock.patch("builtins.input")
+  async def test_tool_confirmation_hook_sanitizes_terminal_output(
+      self, mock_input, mock_print
+  ):
+    """Verifies ToolConfirmationHook.run strips ANSI escape sequences and control chars."""
+    mock_input.return_value = "y"
+    hook = interactive.ToolConfirmationHook()
+    tc = types.ToolCall(
+        name="tool_\x1b[31mname\x07",
+        args={"arg": "val\r\x1b[2A\x1b[2K spoofed"},
+    )
+    ctx = mock.MagicMock()
+    res = await hook.run(ctx, tc)
+    self.assertTrue(res.allow)
+    printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list)
+    self.assertNotIn("\x1b", printed)
+    self.assertNotIn("\r", printed)
+    self.assertIn("tool_name", printed)
+
+  def test_sanitize_terminal_text_preserves_newlines_and_tabs(self):
+    r"""Verifies _sanitize_terminal_text strips control chars while keeping \n and \t."""
+    raw = "line1\n\tindented\r\x07\x1b[31mred\x1b[0m"
+    sanitized = interactive._sanitize_terminal_text(raw)  # pylint: disable=protected-access
+    self.assertEqual(sanitized, "line1\n\tindentedred")
+
 
 if __name__ == "__main__":
   unittest.main()
-
-

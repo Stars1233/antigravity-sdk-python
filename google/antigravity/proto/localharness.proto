@@ -816,6 +816,7 @@ message PolicyDecisionRequest {
   string request_id = 1;
   string rule_id = 2;
   .antigravity.localharness.PreToolArgs tool_args = 3;
+  string reason = 4;
 }
 message PolicyDecisionResponse {
   string request_id = 1;
