@@ -17,6 +17,8 @@
 from google.antigravity.hooks.policy import allow
 from google.antigravity.hooks.policy import allow_all
 from google.antigravity.hooks.policy import ask_user
+from google.antigravity.hooks.policy import auto
+from google.antigravity.hooks.policy import AutoPolicy
 from google.antigravity.hooks.policy import confirm_run_command
 from google.antigravity.hooks.policy import Decision
 from google.antigravity.hooks.policy import deny
@@ -29,6 +31,8 @@ __all__ = [
     "allow",
     "allow_all",
     "ask_user",
+    "auto",
+    "AutoPolicy",
     "confirm_run_command",
     "Decision",
     "deny",

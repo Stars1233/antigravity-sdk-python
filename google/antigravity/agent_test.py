@@ -992,6 +992,36 @@ class AgentConfigTest(unittest.IsolatedAsyncioTestCase):
     a._conversation = mock_conv
     self.assertEqual(a.conversation_id, "test-conv-123")
 
+  @mock.patch(
+      "google.antigravity.connections."
+      "local.local_connection.LocalConnectionStrategy"
+  )
+  @mock.patch.object(conversation.Conversation, "create")
+  async def test_auto_policy_allows_write_tools(
+      self, mock_conv_create, mock_strategy_class
+  ):
+    """When policy.auto() is present, write tools should not be restricted."""
+    del mock_conv_create  # Unused.
+    mock_strategy_instance = mock.MagicMock()
+    mock_strategy_instance.stop = mock.AsyncMock()
+    mock_strategy_class.return_value = mock_strategy_instance
+
+    config = local_connection.LocalAgentConfig(
+        system_instructions="test",
+        capabilities=types.CapabilitiesConfig(),
+        policies=[policy.auto()],
+    )
+    async with agent.Agent(config):
+      _, kwargs = mock_strategy_class.call_args
+      capabilities_config = kwargs.get("capabilities_config")
+      self.assertIsNotNone(capabilities_config)
+      active_tools = agent.connection_module.resolve_active_tools(
+          capabilities_config
+      )
+      self.assertIn(types.BuiltinTools.RUN_COMMAND, active_tools)
+      policies = kwargs.get("policies")
+      self.assertTrue(any(isinstance(p, policy.AutoPolicy) for p in policies))
+
 
 if __name__ == "__main__":
   unittest.main()

@@ -138,6 +138,60 @@ class Policy:
   name: str = ""
   reason: str = ""
 
+  @property
+  def auto(self) -> bool:
+    """Whether this policy enables auto policy mode safety evaluation."""
+    return False
+
+
+@dataclasses.dataclass(frozen=True)
+class AutoPolicy(Policy):
+  """A policy rule enabling auto policy mode safety evaluation.
+
+  When running in auto policy mode, commands and tool calls are assessed for
+  safety by pre-tool safety assessors before execution. If flagged, execution is
+  blocked or user confirmation is requested.
+
+  Which tools are evaluated?
+    Auto policy mode evaluates tools with inherent execution or network risk,
+    such as shell command execution and external URL fetching.
+
+    Standard read-only workspace operations (such as reading files or
+    listing directories) are allowed without prompting. For file-write
+    containment, pair ``policy.auto(...)`` with
+    ``policy.workspace_only(workspaces)``.
+
+  Evaluation order when combined with other policies:
+    1. Specific tool rules and server prefix rules (e.g.
+       ``policy.allow("run_command")``, ``policy.deny("run_command")``,
+       ``policy.workspace_only(...)``) run first and take precedence.
+    2. ``policy.auto(...)`` runs next for assessed tools and safety-flagged
+       invocations.
+    3. Global wildcard rules (``policy.deny_all()``, ``policy.allow_all()``)
+       run last as catch-all fallbacks for unassessed tools.
+  """
+
+  tool: str = dataclasses.field(default="*", init=False, repr=False)
+  decision: Decision = dataclasses.field(
+      default=Decision.DENY, init=False, repr=False
+  )
+  when: Predicate | None = dataclasses.field(
+      default=None, init=False, repr=False
+  )
+  reason: str = dataclasses.field(default="", init=False, repr=False)
+  name: str = "auto"
+  ask_user: AskUserHandler | None = None
+  model: str | None = None
+
+  @property
+  def auto(self) -> bool:
+    """Whether this policy enables auto policy mode safety evaluation."""
+    return True
+
+  def __post_init__(self):
+    decision = Decision.ASK_USER if self.ask_user is not None else Decision.DENY
+    object.__setattr__(self, "decision", decision)
+
 
 # ---------------------------------------------------------------------------
 # Builder helpers
@@ -267,6 +321,7 @@ def deny(
     *,
     when: Predicate | None = None,
     name: str = "",
+    reason: str = "",
 ) -> Policy:
   ...
 
@@ -278,6 +333,7 @@ def deny(
     *,
     when: Predicate | None = None,
     name: str = "",
+    reason: str = "",
 ) -> list[Policy]:
   ...
 
@@ -288,6 +344,7 @@ def deny(
     *,
     when: Predicate | None = None,
     name: str = "",
+    reason: str = "",
 ) -> Any:
   """Creates a DENY policy.
 
@@ -296,6 +353,8 @@ def deny(
     mcp_tools: Optional list of tool names if BaseMcpServerConfig is provided.
     when: Optional argument predicate.
     name: Human-readable label.
+    reason: Optional human-readable explanation returned when the tool call is
+      denied.
 
   Returns:
     A Policy or a list of Policies.
@@ -303,9 +362,13 @@ def deny(
   if isinstance(tool, str):
     if mcp_tools is not None:
       raise ValueError("mcp_tools cannot be specified when tool is a string.")
-    return Policy(tool=tool, decision=Decision.DENY, when=when, name=name)  # pytype: disable=bad-return-type  # False positive: pytype fails to narrow overloaded types in implementation body.
+    return Policy(
+        tool=tool, decision=Decision.DENY, when=when, name=name, reason=reason
+    )
 
-  return _mcp_policies(Decision.DENY, tool, mcp_tools, when=when, name=name)  # pytype: disable=bad-return-type  # False positive: pytype fails to narrow overloaded types in implementation body.
+  return _mcp_policies(
+      Decision.DENY, tool, mcp_tools, when=when, name=name, reason=reason
+  )
 
 
 @overload
@@ -485,6 +548,53 @@ def workspace_only(workspaces: Sequence[PathOrStr]) -> list[Policy]:
   return [deny(tool, name=_WORKSPACE_ONLY_POLICY_NAME) for tool in file_tools]
 
 
+def auto(
+    *,
+    name: str = "auto",
+    handler: AskUserHandler | None = None,
+    model: str | None = None,
+) -> AutoPolicy:
+  """Creates a policy enabling auto policy mode safety evaluation.
+
+  When running in auto policy mode, commands and tool calls are assessed for
+  safety by pre-tool safety assessors before execution. If flagged, execution is
+  blocked or user confirmation is requested.
+
+  Which tools are evaluated?
+    Auto policy mode evaluates tools with inherent execution or network risk,
+    such as shell command execution and external URL fetching.
+
+    Standard read-only workspace operations (such as reading files or
+    listing directories) are allowed without prompting. For file-write
+    containment, pair ``policy.auto(...)`` with
+    ``policy.workspace_only(workspaces)``.
+
+  Evaluation order when combined with other policies:
+    1. Specific tool rules and server prefix rules (e.g.
+       ``policy.allow("run_command")``, ``policy.deny("run_command")``,
+       ``policy.workspace_only(...)``) run first and take precedence.
+    2. ``policy.auto(...)`` runs next for assessed tools and safety-flagged
+       invocations.
+    3. Global wildcard rules (``policy.deny_all()``, ``policy.allow_all()``)
+       run last as catch-all fallbacks for unassessed tools.
+
+  Args:
+    name: Human-readable label for logging.
+    handler: Optional AskUserHandler invoked when auto policy mode flags a tool
+      call. If None, flagged tool calls are denied.
+    model: Optional Gemini model name used for safety evaluation. If None, the
+      runtime's default safety assessment model configuration is used.
+
+  Returns:
+    An AutoPolicy object configured for auto policy mode.
+  """
+  return AutoPolicy(
+      name=name,
+      ask_user=handler,
+      model=model,
+  )
+
+
 # ---------------------------------------------------------------------------
 # Dynamic evaluation helpers
 # ---------------------------------------------------------------------------
@@ -598,8 +708,9 @@ class _PolicyDecideHook(hooks.PreToolCallDecideHook):
     del context
     tool_call = data
     for p in self._policies:
-      if p.name == _WORKSPACE_ONLY_POLICY_NAME:
-        # Workspace boundary containment is enforced at the platform layer.
+      if p.name == _WORKSPACE_ONLY_POLICY_NAME or p.auto:
+        # Workspace boundary containment and auto policy mode safety evaluation
+        # are enforced at the platform/execution layer.
         continue
 
       if not _matches_target(p.tool, tool_call):
@@ -740,8 +851,18 @@ def _to_policy_config_proto(
 
   dynamic_policy_map: dict[str, Policy] = {}
   proto_rules: list[localharness_pb2.PolicyRule] = []
+  auto_policy: AutoPolicy | None = None
 
   for i, p in enumerate(flat):
+    if isinstance(p, AutoPolicy):
+      if auto_policy is not None:
+        raise ValueError(
+            "Multiple AutoPolicy rules found; at most one policy.auto()"
+            " rule may be specified."
+        )
+      auto_policy = p
+      continue
+
     # TODO: Remove _parse_tool_target once Policy has server_name.
     tool_name, server_name = _parse_tool_target(p.tool)
     is_workspace_only = p.name == _WORKSPACE_ONLY_POLICY_NAME
@@ -766,8 +887,17 @@ def _to_policy_config_proto(
         )
     )
 
+  auto_config = None
+  if auto_policy is not None:
+    auto_config = localharness_pb2.AutoPolicyConfig(
+        enabled=True,
+        model=auto_policy.model or "",
+    )
+    dynamic_policy_map["auto"] = auto_policy
+
   config = localharness_pb2.PolicyConfig(
       rules=proto_rules,
+      auto_config=auto_config,
   )
   return config, dynamic_policy_map
 

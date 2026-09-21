@@ -358,7 +358,7 @@ class AskQuestionHook(hooks.OnInteractionHook):
 def _upgrade_policies_list(
     policies: Sequence[policy_module.Policy | Sequence[policy_module.Policy]],
 ) -> list[policy_module.Policy]:
-  """Upgrades RUN_COMMAND deny policies in place to ASK_USER policy."""
+  """Upgrades RUN_COMMAND deny policies and auto policy mode policies in place to ASK_USER."""
   upgraded = []
   for p in policy_module.flatten_policies(policies):
     if (
@@ -371,6 +371,16 @@ def _upgrade_policies_list(
               types.BuiltinTools.RUN_COMMAND.value,
               handler=ask_user_handler,
               name=p.name or "interactive_confirm",
+          )
+      )
+    elif (
+        isinstance(p, policy_module.AutoPolicy) and p.ask_user is None
+    ):
+      upgraded.append(
+          policy_module.auto(
+              name=p.name or "auto",
+              handler=ask_user_handler,
+              model=p.model,
           )
       )
     else:

@@ -315,6 +315,15 @@ class UpgradePoliciesListTest(unittest.TestCase):
     self.assertEqual(upgraded[0].decision, policy.Decision.DENY)
     self.assertIsNotNone(upgraded[0].when)
 
+  def test_upgrade_auto_policy_preserves_model(self):
+    """Verifies that when an auto policy is upgraded to ASK_USER, the model is preserved."""
+    p_auto = policy.auto(model="my-custom-model")
+    upgraded = interactive._upgrade_policies_list([p_auto])
+    self.assertEqual(len(upgraded), 1)
+    self.assertEqual(upgraded[0].decision, policy.Decision.ASK_USER)
+    self.assertTrue(upgraded[0].auto)
+    self.assertEqual(upgraded[0].model, "my-custom-model")
+
 
 class RunInteractiveLoopTest(unittest.IsolatedAsyncioTestCase):
   """Tests for run_interactive_loop."""

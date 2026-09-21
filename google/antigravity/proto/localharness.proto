@@ -802,6 +802,11 @@ message PolicyConfig {
   repeated .antigravity.localharness.PolicyRule rules = 1;
   .antigravity.localharness.PolicyConfig.WorkspaceContainment
       workspace_containment = 2;
+  .antigravity.localharness.AutoPolicyConfig auto_config = 3;
+}
+message AutoPolicyConfig {
+  bool enabled = 1;
+  string model = 2;
 }
 message PolicyRule {
   string tool = 1;

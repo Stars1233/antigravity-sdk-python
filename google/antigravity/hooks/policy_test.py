@@ -526,6 +526,70 @@ class AskUserTest(unittest.IsolatedAsyncioTestCase):
     self.assertEqual(len(received), 1)
     self.assertIs(received[0], tc)
 
+  async def test_handler_1_arg(self):
+    """1-arg handler receives ToolCall."""
+    received = []
+
+    def handler(tc: types.ToolCall) -> bool:
+      received.append(tc)
+      return True
+
+    p = policy.ask_user("run_command", handler=handler)
+    tc = _make_tool_call("run_command")
+    result = await policy._execute_ask_user(p, tc)
+    self.assertTrue(result)
+    self.assertEqual(len(received), 1)
+
+  async def test_handler_2_arg_with_reason(self):
+    """2-arg handler receives ToolCall and reason."""
+    received = []
+
+    def handler(tc: types.ToolCall, reason: str) -> bool:
+      received.append((tc, reason))
+      return True
+
+    p = policy.ask_user("run_command", handler=handler)
+    tc = _make_tool_call("run_command")
+    result = await policy._execute_ask_user(p, tc, reason="test reason")
+    self.assertTrue(result)
+    self.assertEqual(received[0][1], "test reason")
+
+  async def test_handler_kwargs(self):
+    """**kwargs handler receives reason."""
+    received = []
+
+    def handler(tc: types.ToolCall, **kwargs) -> bool:
+      del tc
+      received.append(kwargs.get("reason"))
+      return True
+
+    p = policy.ask_user("run_command", handler=handler)
+    tc = _make_tool_call("run_command")
+    result = await policy._execute_ask_user(p, tc, reason="test reason")
+    self.assertTrue(result)
+    self.assertEqual(received[0], "test reason")
+
+  async def test_internal_type_error_not_swallowed(self):
+    """Internal TypeError inside handler is not swallowed by fallback."""
+    def handler(tc: types.ToolCall) -> bool:
+      del tc
+      # This raises TypeError internally, which could have been incorrectly
+      # caught by the old dispatch fallback logic trying to inject reason.
+      return len(10) > 0  # TypeError: object of type 'int' has no len()
+
+    p = policy.ask_user("run_command", handler=handler)
+    tc = _make_tool_call("run_command")
+
+    # Evaluate using _PolicyDecideHook to simulate real flow and confirm it
+    # fails closed due to the exception. The hook runner uses try/except
+    # Exception on evaluate_predicate and _execute_ask_user, returning
+    # Allow=False on exception.
+    hook = policy.enforce([p])
+    ctx = hooks.HookContext()
+    result = await hook.run(ctx, tc)
+    self.assertFalse(result.allow)
+    self.assertIn("object of type 'int' has no len", result.message)
+
 
 class DefaultBehaviorTest(unittest.IsolatedAsyncioTestCase):
   """Verifies behavior when no policies match."""
@@ -919,6 +983,16 @@ class ToPolicyConfigProtoTest(absltest.TestCase):
     self.assertEqual(rule.rule_id, "")
     self.assertEmpty(dynamic_policy_map)
 
+  def test_static_deny_with_reason(self):
+    """Static deny with custom reason serializes deny_reason."""
+    p = policy.deny(
+        "run_command", name="block_cmd", reason="Shell access disabled."
+    )
+    self.assertEqual(p.reason, "Shell access disabled.")
+    config, _ = policy._to_policy_config_proto([p])
+    self.assertLen(config.rules, 1)
+    self.assertEqual(config.rules[0].deny_reason, "Shell access disabled.")
+
   def test_unnamed_policy_defaults_to_tool(self):
     """Unnamed policy gets name defaulted to tool target."""
     config, _ = policy._to_policy_config_proto([policy.deny("run_command")])
@@ -1119,6 +1193,36 @@ class ExecuteAskUserTest(unittest.IsolatedAsyncioTestCase):
     self.assertTrue(res)
     self.assertEqual(called, ["run_command"])
 
+  async def test_execute_ask_user_two_arg_auto_handler_receives_reason(self):
+    received_reason = []
+
+    def handler_two_args(tc, reason=None):
+      del tc
+      received_reason.append(reason)
+      return True
+
+    p = policy.auto(handler=handler_two_args)
+    tc = _make_tool_call("run_command")
+    res = await policy._execute_ask_user(p, tc, reason="Command is dangerous")
+    self.assertTrue(res)
+    self.assertEqual(received_reason, ["Command is dangerous"])
+
+  async def test_execute_ask_user_internal_type_error_propagates(self):
+    call_count = 0
+
+    def buggy_handler(tc, reason=""):
+      nonlocal call_count
+      call_count += 1
+      del tc, reason
+      raise TypeError("custom internal type error")
+
+    p = policy.ask_user("run_command", handler=buggy_handler)
+    with self.assertRaisesRegex(TypeError, "custom internal type error"):
+      await policy._execute_ask_user(
+          p, _make_tool_call("run_command"), reason="test"
+      )
+    self.assertEqual(call_count, 1)
+
   async def test_execute_ask_user_no_signature_calls_without_reason(self):
     called = []
 
@@ -1204,5 +1308,87 @@ class ExecuteAskUserTest(unittest.IsolatedAsyncioTestCase):
     )
 
 
+class AutoPolicyTest(unittest.IsolatedAsyncioTestCase):
+  """Verifies policy.auto() builder and proto conversion."""
+
+  def test_auto_defaults(self):
+    p = policy.auto()
+    self.assertIsInstance(p, policy.AutoPolicy)
+    self.assertIsInstance(p, policy.Policy)
+    self.assertTrue(p.auto)
+    self.assertEqual(p.tool, "*")
+    self.assertEqual(p.decision, policy.Decision.DENY)
+    self.assertIsNone(p.ask_user)
+
+  def test_auto_with_handler(self):
+    handler = lambda tc: True
+    p = policy.auto(handler=handler)
+    self.assertIsInstance(p, policy.AutoPolicy)
+    self.assertTrue(p.auto)
+    self.assertEqual(p.decision, policy.Decision.ASK_USER)
+    self.assertIs(p.ask_user, handler)
+
+  def test_auto_policy_direct_instantiation(self):
+    handler = lambda tc: True
+    p = policy.AutoPolicy(name="my-auto", ask_user=handler, model="flash")
+    self.assertIsInstance(p, policy.Policy)
+    self.assertTrue(p.auto)
+    self.assertEqual(p.name, "my-auto")
+    self.assertEqual(p.model, "flash")
+    self.assertEqual(p.decision, policy.Decision.ASK_USER)
+    self.assertIs(p.ask_user, handler)
+
+  def test_auto_with_model(self):
+    p = policy.auto(model="gemini-3.5-flash-lite")
+    self.assertTrue(p.auto)
+    self.assertEqual(p.model, "gemini-3.5-flash-lite")
+
+    config, _ = policy._to_policy_config_proto([p])
+    self.assertTrue(config.auto_config.enabled)
+    self.assertEqual(config.auto_config.model, "gemini-3.5-flash-lite")
+
+  def test_auto_to_proto(self):
+    config, dynamic_policy_map = policy._to_policy_config_proto([
+        policy.auto(),
+    ])
+    self.assertTrue(config.auto_config.enabled)
+    self.assertIn("auto", dynamic_policy_map)
+    self.assertNotIn("cortex_hook", dynamic_policy_map)
+
+  def test_user_policy_named_auto_does_not_collide(self):
+    user_rule = policy.allow(
+        "run_command", name="auto", when=lambda args: True
+    )
+    self.assertFalse(user_rule.auto)
+    config, dynamic_policy_map = policy._to_policy_config_proto([
+        user_rule,
+        policy.auto(),
+    ])
+    self.assertTrue(config.auto_config.enabled)
+    self.assertEqual(len(config.rules), 1)
+    self.assertEqual(config.rules[0].name, "auto")
+    self.assertEqual(config.rules[0].rule_id, "rule_0")
+    self.assertIs(dynamic_policy_map["rule_0"], user_rule)
+    self.assertIsInstance(dynamic_policy_map["auto"], policy.AutoPolicy)
+
+  def test_multiple_auto_policies_raises_error(self):
+    with self.assertRaisesRegex(
+        ValueError, "Multiple AutoPolicy rules found"
+    ):
+      policy._to_policy_config_proto([
+          policy.auto(),
+          policy.auto(model="gemini-2.5-flash"),
+      ])
+
+  async def test_auto_skipped_in_in_process_enforce(self):
+    from google.antigravity.hooks import hook_runner  # pylint: disable=g-import-not-at-top
+
+    hook = policy.enforce([policy.auto()])
+    runner = hook_runner.HookRunner(pre_tool_call_decide_hooks=[hook])
+    turn_context = hooks.TurnContext(runner.session_context)
+    result, _, _ = await runner.dispatch_pre_tool_call(
+        turn_context, _make_tool_call("run_command")
+    )
+    self.assertTrue(result.allow)
 if __name__ == "__main__":
   absltest.main()
