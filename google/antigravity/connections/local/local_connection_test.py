@@ -43,8 +43,10 @@ from google.antigravity.proto import localharness_pb2
 from google.antigravity import models as models_lib
 from google.antigravity import types
 from google.antigravity.connections.local import event_processor
+from google.antigravity.connections.local import litert_connection_config
 from google.antigravity.connections.local import local_connection
 from google.antigravity.connections.local import local_connection_config
+from google.antigravity.connections.local import local_openai_connection_config
 from google.antigravity.connections.local import struct_converter
 from google.antigravity.connections.local import test_utils
 from google.antigravity.hooks import hook_runner
@@ -6409,6 +6411,14 @@ class LocalAgentConfigEvalE2ETest(unittest.IsolatedAsyncioTestCase):
       self.assertNotIn("<subagent_reminder>", si_text)
       self.assertNotIn("<knowledge_items>", si_text)
 
+      # 3b. Verify generationConfig.thinkingConfig defaults to
+      # thinkingLevel=high on the HTTP wire when LocalAgentConfig(...).eval()
+      # is used.
+      self.assertEqual(
+          first_req_json.get("generationConfig", {}).get("thinkingConfig"),
+          {"includeThoughts": True, "thinkingLevel": "high"},
+      )
+
       # 4. Verify [policy.allow_all()] executed run_command autonomously and
       # returned the stdout in the subsequent HTTP request's functionResponse.
       third_req_json = server.captured_requests[2]["json"]
@@ -6422,6 +6432,286 @@ class LocalAgentConfigEvalE2ETest(unittest.IsolatedAsyncioTestCase):
       self.assertTrue(
           any("E2E_EVAL_TEST_OK" in (s.content or "") for s in steps)
       )
+
+  def test_eval_defaults_text_model_thinking_level_high_without_mutating_original(
+      self,
+  ):
+    original = local_connection_config.LocalAgentConfig(api_key="test-key")
+    eval_cfg = original.eval()
+
+    # Original config is unmutated
+    self.assertIsNone(original.models[0].endpoint.options)
+    self.assertIsNone(original.models[1].endpoint.options)
+
+    # Eval config sets thinking_level=HIGH on TEXT model, leaves IMAGE unset
+    self.assertIsNotNone(eval_cfg.models[0].endpoint.options)
+    self.assertEqual(
+        eval_cfg.models[0].endpoint.options.thinking_level,
+        types.ThinkingLevel.HIGH,
+    )
+    self.assertIsNone(eval_cfg.models[1].endpoint.options)
+
+    strategy = eval_cfg.create_strategy(tool_runner=None, hook_runner=None)
+    harness_config = strategy._build_harness_config()
+    self.assertEqual(
+        harness_config.models[0].gemini_api_endpoint.options.thinking_level,
+        "high",
+    )
+    self.assertFalse(
+        harness_config.models[1].gemini_api_endpoint.HasField("options")
+    )
+
+  def test_eval_shorthand_model_retains_thinking_level_after_field_assignment(
+      self,
+  ):
+    cfg = local_connection_config.LocalAgentConfig(
+        model="custom-eval-model", api_key="k"
+    ).eval()
+    cfg.save_dir = "/tmp/x"
+
+    self.assertEqual(cfg.model, "custom-eval-model")
+    self.assertEqual(cfg.models[0].name, "custom-eval-model")
+    self.assertEqual(cfg.models[0].endpoint.api_key, "k")
+    self.assertEqual(
+        cfg.models[0].endpoint.options.thinking_level,
+        types.ThinkingLevel.HIGH,
+    )
+    self.assertIsNone(cfg.models[1].endpoint.options)
+
+  def test_eval_all_thinking_level_enum_values_and_none(self):
+    for level in (
+        types.ThinkingLevel.MINIMAL,
+        types.ThinkingLevel.LOW,
+        types.ThinkingLevel.MEDIUM,
+        types.ThinkingLevel.HIGH,
+    ):
+      cfg = local_connection_config.LocalAgentConfig().eval(
+          thinking_level=level
+      )
+      self.assertEqual(
+          cfg.models[0].endpoint.options.thinking_level,
+          level,
+      )
+      self.assertIsNone(cfg.models[1].endpoint.options)
+      strategy = cfg.create_strategy(tool_runner=None, hook_runner=None)
+      harness_config = strategy._build_harness_config()
+      self.assertEqual(
+          harness_config.models[0].gemini_api_endpoint.options.thinking_level,
+          level.value,
+      )
+      self.assertFalse(
+          harness_config.models[1].gemini_api_endpoint.HasField("options")
+      )
+
+    none_cfg = local_connection_config.LocalAgentConfig().eval(
+        thinking_level=None
+    )
+    self.assertIsNone(none_cfg.models[0].endpoint.options)
+    self.assertIsNone(none_cfg.models[1].endpoint.options)
+
+  def test_eval_vertex_endpoint_sets_thinking_level_high_and_preserves_fields(
+      self,
+  ):
+    cfg = local_connection_config.LocalAgentConfig(
+        vertex=True, project="p", location="us-central1", api_key="v-key"
+    ).eval()
+
+    self.assertIsInstance(cfg.models[0].endpoint, types.VertexEndpoint)
+    self.assertEqual(cfg.models[0].endpoint.project, "p")
+    self.assertEqual(cfg.models[0].endpoint.location, "us-central1")
+    self.assertEqual(cfg.models[0].endpoint.api_key, "v-key")
+    self.assertEqual(
+        cfg.models[0].endpoint.options.thinking_level,
+        types.ThinkingLevel.HIGH,
+    )
+    self.assertIsNone(cfg.models[1].endpoint.options)
+
+    strategy = cfg.create_strategy(tool_runner=None, hook_runner=None)
+    harness_config = strategy._build_harness_config()
+    self.assertEqual(
+        harness_config.models[0].vertex_endpoint.options.thinking_level, "high"
+    )
+    self.assertEqual(harness_config.models[0].vertex_endpoint.project, "p")
+    self.assertEqual(
+        harness_config.models[0].vertex_endpoint.location, "us-central1"
+    )
+
+  def test_eval_preserves_existing_endpoint_options_when_thinking_level_unset(
+      self,
+  ):
+    image_target = types.ModelTarget(
+        name="custom-image",
+        types=[types.ModelType.IMAGE],
+        endpoint=types.GeminiAPIEndpoint(api_key="img-key"),
+    )
+    original_target = types.ModelTarget(
+        name="m",
+        endpoint=types.GeminiAPIEndpoint(
+            base_url="http://localhost:8080",
+            options=types.GeminiModelOptions(
+                service_tier=types.ServiceTier.PRIORITY,
+            ),
+        ),
+    )
+    cfg = local_connection_config.LocalAgentConfig(
+        models=[image_target],
+        model=original_target,
+    ).eval(thinking_level=types.ThinkingLevel.MEDIUM)
+
+    # Original ModelTarget is unmutated
+    self.assertIsNone(original_target.endpoint.options.thinking_level)
+
+    # cfg.models[0] is image_target; cfg.models[1] and cfg.model are updated m
+    self.assertEqual(cfg.models[0].name, "custom-image")
+    self.assertIsNone(cfg.models[0].endpoint.options)
+    self.assertEqual(cfg.models[1].name, "m")
+    self.assertEqual(cfg.models[1].endpoint.base_url, "http://localhost:8080")
+    self.assertEqual(
+        cfg.models[1].endpoint.options.thinking_level,
+        types.ThinkingLevel.MEDIUM,
+    )
+    self.assertEqual(
+        cfg.models[1].endpoint.options.service_tier,
+        types.ServiceTier.PRIORITY,
+    )
+    self.assertIsInstance(cfg.model, types.ModelTarget)
+    self.assertEqual(cfg.model.name, "m")
+    self.assertEqual(
+        cfg.model.endpoint.options.thinking_level,
+        types.ThinkingLevel.MEDIUM,
+    )
+
+  def test_eval_multiple_text_models_and_multimodal_target(self):
+    cfg = local_connection_config.LocalAgentConfig(
+        models=[
+            types.ModelTarget(
+                name="primary-text",
+                types=[types.ModelType.TEXT],
+                endpoint=types.GeminiAPIEndpoint(api_key="k1"),
+            ),
+            types.ModelTarget(
+                name="fallback-text",
+                types=[types.ModelType.TEXT],
+                endpoint=types.VertexEndpoint(project="p", location="global"),
+            ),
+            types.ModelTarget(
+                name="multimodal",
+                types=[types.ModelType.TEXT, types.ModelType.IMAGE],
+                endpoint=types.GeminiAPIEndpoint(api_key="k2"),
+            ),
+            types.ModelTarget(
+                name="image-only",
+                types=[types.ModelType.IMAGE],
+                endpoint=types.GeminiAPIEndpoint(api_key="k3"),
+            ),
+        ]
+    ).eval(thinking_level=types.ThinkingLevel.LOW)
+
+    self.assertEqual(
+        cfg.models[0].endpoint.options.thinking_level,
+        types.ThinkingLevel.LOW,
+    )
+    self.assertEqual(
+        cfg.models[1].endpoint.options.thinking_level,
+        types.ThinkingLevel.LOW,
+    )
+    self.assertEqual(
+        cfg.models[2].endpoint.options.thinking_level,
+        types.ThinkingLevel.LOW,
+    )
+    self.assertIsNone(cfg.models[3].endpoint.options)
+
+  def test_eval_raises_when_model_target_already_sets_thinking_level(self):
+    base_cfg = local_connection_config.LocalAgentConfig(
+        model=types.ModelTarget(
+            name="m",
+            endpoint=types.GeminiAPIEndpoint(
+                options=types.GeminiModelOptions(
+                    thinking_level=types.ThinkingLevel.LOW,
+                ),
+            ),
+        )
+    )
+    with self.assertRaisesRegex(
+        ValueError, "already sets thinking_level=.*pass it to .eval"
+    ):
+      base_cfg.eval()
+
+    with self.assertRaisesRegex(
+        ValueError, "already sets thinking_level=.*pass it to .eval"
+    ):
+      base_cfg.eval(thinking_level=types.ThinkingLevel.MEDIUM)
+
+    # Double .eval() also raises because the first .eval() sets thinking_level
+    eval_once = local_connection_config.LocalAgentConfig().eval()
+    with self.assertRaisesRegex(
+        ValueError, "already sets thinking_level=.*pass it to .eval"
+    ):
+      eval_once.eval()
+
+    # Calling .eval(thinking_level=None) succeeds and preserves LOW
+    preserved = base_cfg.eval(thinking_level=None)
+    self.assertEqual(
+        preserved.models[0].endpoint.options.thinking_level,
+        types.ThinkingLevel.LOW,
+    )
+
+  def test_eval_raises_when_explicit_model_target_has_none_endpoint(self):
+    original = local_connection_config.LocalAgentConfig(
+        api_key="explicit-key",
+        models=[types.ModelTarget(name="custom", endpoint=None)],
+    )
+    with self.assertRaisesRegex(
+        ValueError,
+        "endpoint must be a GeminiAPIEndpoint or VertexEndpoint, got NoneType",
+    ):
+      original.eval()
+
+  def test_eval_raises_on_litert_and_local_openai_configs_unless_thinking_level_none(
+      self,
+  ):
+    litert_cfg = litert_connection_config.LiteRTAgentConfig(
+        model_path="/path/to/gemma.litertlm"
+    )
+    with self.assertRaisesRegex(
+        ValueError,
+        "Cannot apply thinking_level in eval\\(\\) on LiteRTAgentConfig",
+    ):
+      litert_cfg.eval()
+
+    with self.assertRaisesRegex(
+        ValueError,
+        "Cannot apply thinking_level in eval\\(\\) on LiteRTAgentConfig",
+    ):
+      litert_cfg.eval(thinking_level=types.ThinkingLevel.LOW)
+
+    litert_eval_none = litert_cfg.eval(thinking_level=None)
+    self.assertIsInstance(
+        litert_eval_none, litert_connection_config.LiteRTAgentConfig
+    )
+    self.assertFalse(litert_eval_none.capabilities.enable_subagents)
+
+    openai_cfg = local_openai_connection_config.LocalOpenAIAgentConfig(
+        model="qwen2.5-coder",
+        base_url="http://localhost:11434/v1",
+    )
+    with self.assertRaisesRegex(
+        ValueError,
+        "Cannot apply thinking_level in eval\\(\\) on LocalOpenAIAgentConfig",
+    ):
+      openai_cfg.eval()
+
+    with self.assertRaisesRegex(
+        ValueError,
+        "Cannot apply thinking_level in eval\\(\\) on LocalOpenAIAgentConfig",
+    ):
+      openai_cfg.eval(thinking_level=types.ThinkingLevel.MEDIUM)
+
+    openai_eval_none = openai_cfg.eval(thinking_level=None)
+    self.assertIsInstance(
+        openai_eval_none, local_openai_connection_config.LocalOpenAIAgentConfig
+    )
+    self.assertFalse(openai_eval_none.capabilities.enable_subagents)
 
 
 if __name__ == "__main__":

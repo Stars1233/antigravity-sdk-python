@@ -338,7 +338,10 @@ class AgentConfig(abc.ABC, pydantic.BaseModel):
     updates = self._compute_lightweight_presets(user_explicit)
     return cast(Self, self.model_copy(update=updates))
 
-  def eval(self: Self) -> Self:
+  def eval(
+      self: Self,
+      thinking_level: types.ThinkingLevel | None = types.ThinkingLevel.HIGH,
+  ) -> Self:
     """Returns a copy of this configuration with evaluation presets applied.
 
     Because the Antigravity SDK can be configured in many ways to power
@@ -354,6 +357,18 @@ class AgentConfig(abc.ABC, pydantic.BaseModel):
         (`run_command_config=RunCommandConfig(enable_daemons=True)`).
       - Sets `policies=[policy.allow_all()]` for autonomous tool execution.
       - Sets `retry_config=RetryConfig.benchmark()` for resilient API retries.
+      - Defaults `thinking_level` to `ThinkingLevel.HIGH` on text models (unless
+        overridden via `thinking_level` or disabled with `thinking_level=None`).
+
+    Args:
+      thinking_level: Thinking level to apply to text models. Defaults to
+        `ThinkingLevel.HIGH`. Pass `None` to leave existing model target
+        thinking levels unchanged.
+
+    Raises:
+      ValueError: If `thinking_level` is not `None` and the config has no text
+        Gemini/Vertex model targets, or if a text `ModelTarget` already sets
+        `thinking_level`.
     """
     run_cmd_kwargs: dict[str, Any] = {"enable_daemons": True}
     preset_kwargs: dict[str, Any] = {
@@ -386,6 +401,63 @@ class AgentConfig(abc.ABC, pydantic.BaseModel):
       updates["policies"] = [policy.allow_all()]
     if "retry_config" not in self.model_fields_set:
       updates["retry_config"] = types.RetryConfig.benchmark()
+
+    if thinking_level is not None:
+      models = getattr(self, "models", None)
+      if not models:
+        raise ValueError(
+            f"Cannot apply thinking_level in eval() on {type(self).__name__}:"
+            " thinking_level is only supported on configs with Gemini or"
+            " Vertex model targets (pass thinking_level=None to disable)."
+        )
+      text_targets = [t for t in models if types.ModelType.TEXT in t.types]
+      if not text_targets:
+        raise ValueError(
+            "Cannot apply thinking_level in eval(): no ModelType.TEXT target"
+            " found in models."
+        )
+      def _with_thinking_level(target: types.ModelTarget) -> types.ModelTarget:
+        target_copy = target.model_copy(deep=True)
+        if types.ModelType.TEXT not in target_copy.types:
+          return target_copy
+        if not isinstance(
+            target_copy.endpoint,
+            (types.GeminiAPIEndpoint, types.VertexEndpoint),
+        ):
+          raise ValueError(
+              f"Cannot apply thinking_level to ModelTarget '{target.name}':"
+              " endpoint must be a GeminiAPIEndpoint or VertexEndpoint, got"
+              f" {type(target_copy.endpoint).__name__}."
+          )
+        if (
+            target_copy.endpoint.options is not None
+            and target_copy.endpoint.options.thinking_level is not None
+        ):
+          raise ValueError(
+              f"ModelTarget '{target.name}' already sets"
+              f" thinking_level={target_copy.endpoint.options.thinking_level!r};"
+              " remove thinking_level from ModelTarget and pass it to"
+              " .eval(thinking_level=...), or pass .eval(thinking_level=None)"
+              " to keep the ModelTarget's setting."
+          )
+        if target_copy.endpoint.options is None:
+          target_copy.endpoint.options = types.GeminiModelOptions(
+              thinking_level=thinking_level
+          )
+        else:
+          target_copy.endpoint.options.thinking_level = thinking_level
+        return target_copy
+
+      updates["models"] = [_with_thinking_level(t) for t in models]
+      shorthand_model = getattr(self, "model", None)
+      if isinstance(shorthand_model, types.ModelTarget):
+        if shorthand_model.endpoint is None:
+          build_endpoint = getattr(self, "_build_shorthand_endpoint", None)
+          if callable(build_endpoint):
+            shorthand_model = shorthand_model.model_copy(
+                deep=True, update={"endpoint": build_endpoint()}
+            )
+        updates["model"] = _with_thinking_level(shorthand_model)
 
     return cast(Self, self.model_copy(update=updates))
 
