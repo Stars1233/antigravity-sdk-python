@@ -629,10 +629,14 @@ class BuiltinToolsTest(parameterized.TestCase):
     self.assertEqual(enum_member, expected_value)
 
   def test_deprecated_returns_legacy_search_tools(self):
-    """Verifies deprecated() returns SEARCH_DIR and FIND_FILE."""
+    """Verifies deprecated() returns LIST_DIR, SEARCH_DIR, and FIND_FILE."""
     self.assertEqual(
         types.BuiltinTools.deprecated(),
-        [types.BuiltinTools.SEARCH_DIR, types.BuiltinTools.FIND_FILE],
+        [
+            types.BuiltinTools.LIST_DIR,
+            types.BuiltinTools.SEARCH_DIR,
+            types.BuiltinTools.FIND_FILE,
+        ],
     )
 
   def test_read_only_covers_all_tools(self):
@@ -708,21 +712,21 @@ class BuiltinToolsTest(parameterized.TestCase):
     """Verifies that none() returns an empty list."""
     self.assertEqual(types.BuiltinTools.none(), [])
 
-  def test_minimal_returns_five_minimal_tools(self):
-    """Verifies that minimal() returns the 5 core software engineering tools."""
+  def test_minimal_returns_four_minimal_tools(self):
+    """Verifies that minimal() returns the 4 core software engineering tools."""
     expected = [
         types.BuiltinTools.RUN_COMMAND,
         types.BuiltinTools.VIEW_FILE,
         types.BuiltinTools.CREATE_FILE,
         types.BuiltinTools.EDIT_FILE,
-        types.BuiltinTools.LIST_DIR,
     ]
     self.assertEqual(types.BuiltinTools.minimal(), expected)
 
-  def test_default_excludes_ask_question_and_search_tools(self):
-    """Verifies that default() excludes ASK_QUESTION, SEARCH_DIR, and FIND_FILE."""
+  def test_default_excludes_ask_question_and_deprecated_tools(self):
+    """Verifies that default() excludes ASK_QUESTION, LIST_DIR, SEARCH_DIR, and FIND_FILE."""
     excluded = {
         types.BuiltinTools.ASK_QUESTION,
+        types.BuiltinTools.LIST_DIR,
         types.BuiltinTools.SEARCH_DIR,
         types.BuiltinTools.FIND_FILE,
     }

@@ -2327,7 +2327,7 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
     self.assertTrue(config.harness_side_tools.view_file.enabled)
     self.assertTrue(config.harness_side_tools.write_to_file.enabled)
     self.assertFalse(config.harness_side_tools.grep_search.enabled)
-    self.assertTrue(config.harness_side_tools.list_dir.enabled)
+    self.assertFalse(config.harness_side_tools.list_dir.enabled)
     self.assertTrue(config.harness_side_tools.search_web.enabled)
 
   def test_capabilities_config_disabled_tools_preserves_ask_question_disabled(
@@ -5344,7 +5344,7 @@ class LocalAgentConfigTest(absltest.TestCase):
     self.assertTrue(harness_config.harness_side_tools.view_file.enabled)
     self.assertTrue(harness_config.harness_side_tools.write_to_file.enabled)
     self.assertTrue(harness_config.harness_side_tools.file_edit.enabled)
-    self.assertTrue(harness_config.harness_side_tools.list_dir.enabled)
+    self.assertFalse(harness_config.harness_side_tools.list_dir.enabled)
     self.assertFalse(harness_config.harness_side_tools.grep_search.enabled)
     self.assertFalse(harness_config.harness_side_tools.find.enabled)
     self.assertFalse(harness_config.harness_side_tools.user_questions.enabled)
@@ -5408,7 +5408,7 @@ class LocalAgentConfigTest(absltest.TestCase):
     self.assertTrue(harness_config.harness_side_tools.view_file.enabled)
     self.assertTrue(harness_config.harness_side_tools.write_to_file.enabled)
     self.assertTrue(harness_config.harness_side_tools.file_edit.enabled)
-    self.assertTrue(harness_config.harness_side_tools.list_dir.enabled)
+    self.assertFalse(harness_config.harness_side_tools.list_dir.enabled)
     self.assertFalse(harness_config.harness_side_tools.grep_search.enabled)
     self.assertFalse(harness_config.harness_side_tools.find.enabled)
     self.assertEqual(
