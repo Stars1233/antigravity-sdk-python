@@ -52,6 +52,10 @@ message WordInfo {
   .google.protobuf.Duration end_offset = 3;
   string speaker = 4;
 }
+message SpeechAnnotation {
+  string speaker = 1;
+  string style = 2;
+}
 message TextContent {
   message Annotation {
     oneof type {
@@ -61,6 +65,7 @@ message TextContent {
       .genai.FileCitation file_citation = 6;
       .genai.PlaceCitation place_citation = 7;
       .genai.WordInfo word_info = 8;
+      .genai.SpeechAnnotation speech_metadata = 11;
     }
     int32 start_index = 1;
     int32 end_index = 2;
