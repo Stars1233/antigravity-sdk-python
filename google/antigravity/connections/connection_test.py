@@ -15,6 +15,7 @@
 """Validates default implementations in the Connection abstract base class."""
 
 import unittest
+import warnings
 import pydantic
 from google.antigravity import types
 from google.antigravity.connections import connection
@@ -623,6 +624,51 @@ class ResolveActiveToolsTest(unittest.TestCase):
     self.assertEqual(
         connection.resolve_active_tools(subagent_cfg), expected
     )
+
+  def test_default_agent_config_no_deprecation_warning(self):
+    class ConcreteConfig(connection.AgentConfig):
+
+      def create_strategy(self, *, tool_runner, hook_runner):
+        return None
+
+    with warnings.catch_warnings(record=True) as w:
+      warnings.simplefilter("always")
+      cfg = ConcreteConfig()
+      effective = cfg._get_effective_compaction_config()
+      compaction_warnings = [
+          item
+          for item in w
+          if issubclass(item.category, DeprecationWarning)
+          and "compaction_threshold" in str(item.message)
+      ]
+      self.assertEqual(compaction_warnings, [])
+      self.assertIsNone(effective)
+
+  def test_get_effective_compaction_config_legacy_threshold_warns_once(self):
+    class ConcreteConfig(connection.AgentConfig):
+
+      def create_strategy(self, *, tool_runner, hook_runner):
+        return None
+
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore", DeprecationWarning)
+      cfg = ConcreteConfig(
+          capabilities=types.CapabilitiesConfig(compaction_threshold=50000)
+      )
+
+    with warnings.catch_warnings(record=True) as w:
+      warnings.simplefilter("always")
+      effective = cfg._get_effective_compaction_config()
+      compaction_warnings = [
+          item
+          for item in w
+          if issubclass(item.category, DeprecationWarning)
+          and "CapabilitiesConfig.compaction_threshold is deprecated"
+          in str(item.message)
+      ]
+      self.assertEqual(len(compaction_warnings), 1)
+      self.assertIsNotNone(effective)
+      self.assertEqual(effective.token_threshold, 50000)
 
 
 if __name__ == "__main__":

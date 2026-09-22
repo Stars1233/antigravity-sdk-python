@@ -33,6 +33,7 @@ import typing
 from typing import Any, Literal, Union
 import unittest
 from unittest import mock
+import warnings
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -2530,6 +2531,21 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
     self.assertFalse(config.harness_side_tools.grep_search.enabled)
     self.assertEqual(config.compaction_threshold, 0)
     self.assertFalse(config.HasField("compaction_config"))
+
+  def test_default_local_agent_config_emits_no_deprecation_warning(self):
+    """Verifies default LocalAgentConfig and CapabilitiesConfig emit no DeprecationWarning."""
+    with warnings.catch_warnings(record=True) as w:
+      warnings.simplefilter("always")
+      agent_cfg = local_connection_config.LocalAgentConfig()
+      strategy = self._make_strategy(capabilities_config=agent_cfg.capabilities)
+      _ = strategy._build_harness_config()
+      compaction_warnings = [
+          item
+          for item in w
+          if issubclass(item.category, DeprecationWarning)
+          and "compaction_threshold" in str(item.message)
+      ]
+      self.assertEqual(compaction_warnings, [])
 
   def test_capabilities_config_explicit_ask_question_enabled(self):
     """Verifies that explicitly enabling ASK_QUESTION sets user_questions.enabled."""

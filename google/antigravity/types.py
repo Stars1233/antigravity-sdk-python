@@ -615,9 +615,15 @@ class CapabilitiesConfig(pydantic.BaseModel):
       )
     return self
 
+  def _get_explicit_compaction_threshold(self) -> int | None:
+    """Returns `compaction_threshold` if explicitly configured, bypassing its deprecated descriptor."""
+    if "compaction_threshold" not in self.model_fields_set:
+      return None
+    return self.__dict__.get("compaction_threshold")
+
   @pydantic.model_validator(mode="after")
   def _warn_deprecated_compaction_fields(self) -> "CapabilitiesConfig":
-    if self.compaction_threshold is not None:
+    if self._get_explicit_compaction_threshold() is not None:
       warnings.warn(
           "CapabilitiesConfig.compaction_threshold is deprecated. Configure"
           " CompactionConfig(token_threshold=...) directly on"

@@ -110,9 +110,10 @@ def to_proto_compaction_config(
   """Converts SDK CompactionConfig and legacy capabilities to proto and legacy threshold."""
   effective_compaction = compaction_config
   if effective_compaction is None and capabilities is not None:
-    if capabilities.compaction_threshold is not None:
+    raw_threshold = capabilities._get_explicit_compaction_threshold()  # pylint: disable=protected-access
+    if raw_threshold is not None:
       effective_compaction = types.CompactionConfig(
-          token_threshold=capabilities.compaction_threshold,
+          token_threshold=raw_threshold,
       )
 
   if effective_compaction is None:

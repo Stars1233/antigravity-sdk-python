@@ -802,20 +802,36 @@ class CapabilitiesConfigTest(unittest.TestCase):
           disabled_tools=[types.BuiltinTools.RUN_COMMAND],
       )
 
+  def test_default_instantiation_emits_no_deprecation_warning(self):
+    """Verifies default CapabilitiesConfig() emits no DeprecationWarning."""
+    with warnings.catch_warnings(record=True) as w:
+      warnings.simplefilter("always")
+      config = types.CapabilitiesConfig()
+      explicit_none_config = types.CapabilitiesConfig(compaction_threshold=None)
+      compaction_warnings = [
+          item
+          for item in w
+          if issubclass(item.category, DeprecationWarning)
+          and "compaction_threshold" in str(item.message)
+      ]
+      self.assertEqual(compaction_warnings, [])
+    self.assertIsNone(config._get_explicit_compaction_threshold())
+    self.assertIsNone(explicit_none_config._get_explicit_compaction_threshold())
+
   def test_compaction_threshold_explicit(self):
     """Verifies that compaction_threshold accepts an integer and emits DeprecationWarning."""
     with warnings.catch_warnings(record=True) as w:
       warnings.simplefilter("always")
       config = types.CapabilitiesConfig(compaction_threshold=50000)
+      init_warnings = [
+          item
+          for item in w
+          if issubclass(item.category, DeprecationWarning)
+          and "CapabilitiesConfig.compaction_threshold is deprecated"
+          in str(item.message)
+      ]
+      self.assertEqual(len(init_warnings), 1)
       self.assertEqual(config.compaction_threshold, 50000)
-      self.assertTrue(
-          any(
-              issubclass(item.category, DeprecationWarning)
-              and "CapabilitiesConfig.compaction_threshold is deprecated"
-              in str(item.message)
-              for item in w
-          )
-      )
 
   def test_ask_question_warning_when_not_interactive(self):
     """Verifies warning when ASK_QUESTION is enabled and not interactive."""

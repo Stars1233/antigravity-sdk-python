@@ -108,20 +108,19 @@ class AgentConfig(abc.ABC, pydantic.BaseModel):
     """Returns the effective CompactionConfig, falling back to legacy capabilities."""
     if self.compaction_config is not None:
       return self.compaction_config
-    if (
-        self.capabilities is not None
-        and self.capabilities.compaction_threshold is not None
-    ):
-      warnings.warn(
-          "CapabilitiesConfig.compaction_threshold is deprecated. Configure"
-          " CompactionConfig(token_threshold=...) directly on"
-          " AgentConfig instead.",
-          category=DeprecationWarning,
-          stacklevel=2,
-      )
-      return types.CompactionConfig(
-          token_threshold=self.capabilities.compaction_threshold,
-      )
+    if self.capabilities is not None:
+      raw_threshold = self.capabilities._get_explicit_compaction_threshold()  # pylint: disable=protected-access
+      if raw_threshold is not None:
+        warnings.warn(
+            "CapabilitiesConfig.compaction_threshold is deprecated. Configure"
+            " CompactionConfig(token_threshold=...) directly on"
+            " AgentConfig instead.",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
+        return types.CompactionConfig(
+            token_threshold=raw_threshold,
+        )
     return None
 
   @pydantic.field_validator("debug_config", mode="before")
