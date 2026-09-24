@@ -664,6 +664,22 @@ class DenyReasonTest(unittest.IsolatedAsyncioTestCase):
     result = await hook.run(ctx, _make_tool_call("run_command"))
     self.assertIn("run_command", result.message)
 
+  async def test_custom_reason_in_deny_policy(self):
+    """When a policy has a custom reason, it is used as the deny message."""
+    hook = policy.enforce([
+        policy.deny(
+            "run_command",
+            name="block-cmd",
+            reason="Custom security policy: shell execution forbidden.",
+        ),
+    ])
+    ctx = hooks.HookContext()
+    result = await hook.run(ctx, _make_tool_call("run_command"))
+    self.assertFalse(result.allow)
+    self.assertEqual(
+        result.message, "Custom security policy: shell execution forbidden."
+    )
+
 
 class IntegrationWithHookRunnerTest(unittest.IsolatedAsyncioTestCase):
   """Verifies the policy hook integrates with HookRunner dispatch."""

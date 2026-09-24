@@ -725,7 +725,7 @@ class _PolicyDecideHook(hooks.PreToolCallDecideHook):
           _logger.info("Policy %r denied tool %r.", label, tool_call.name)
           return hooks.HookResult(
               allow=False,
-              message=f"Denied by policy '{label}'.",
+              message=p.reason or f"Denied by policy '{label}'.",
           )
         if p.decision == Decision.APPROVE:
           _logger.info("Policy %r approved tool %r.", label, tool_call.name)
