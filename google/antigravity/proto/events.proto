@@ -33,6 +33,7 @@ option features = { field_presence : IMPLICIT enum_type : OPEN utf8_validation :
 message ClientEventBatch {
   oneof connect_request {
     .genai.CreateInteractionEvent create_interaction = 7;
+    .genai.ReconnectInteractionEvent reconnect_interaction = 8;
   }
   oneof end_request {
     .genai.CompleteInteractionEvent complete_interaction = 5;
@@ -52,6 +53,7 @@ message ClientEvent {
 message ServerEventBatch {
   oneof connect_reply {
     .genai.InteractionCreatedEvent interaction_created = 7;
+    .genai.InteractionReconnectedEvent interaction_reconnected = 8;
   }
   oneof end_signal {
     .genai.InteractionCompletedEvent interaction_completed = 6;
@@ -118,6 +120,14 @@ message InteractionCreatedEvent {
   string interaction_id = 1;
   repeated .genai.SkillDeclaration available_skills = 2;
   repeated .genai.SlashCommandDeclaration available_slash_commands = 3;
+}
+message ReconnectInteractionEvent {
+  string interaction_id = 1 [json_name = "id"];
+  int64 next_output_seq_num = 2;
+  bool background = 3;
+}
+message InteractionReconnectedEvent {
+  int64 next_input_seq_num = 1;
 }
 message CompleteInteractionEvent {}
 message CancelInteractionEvent {}

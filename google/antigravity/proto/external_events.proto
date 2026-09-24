@@ -29,6 +29,8 @@ message ExternalClientEvent {
 
     .genai.CreateInteractionEvent create_interaction = 1
         [(gaos.parsing.json_discriminator_value) = "interaction.create"];
+    .genai.ReconnectInteractionEvent reconnect_interaction = 2
+        [(gaos.parsing.json_discriminator_value) = "interaction.connect"];
     .genai.CompleteInteractionEvent complete_interaction = 4
         [(gaos.parsing.json_discriminator_value) = "interaction.complete"];
     .genai.CancelInteractionEvent cancel_interaction = 5
@@ -49,6 +51,8 @@ message ExternalServerEvent {
 
     .genai.InteractionCreatedEvent interaction_created = 1
         [(gaos.parsing.json_discriminator_value) = "interaction.created"];
+    .genai.InteractionReconnectedEvent interaction_reconnected = 2
+        [(gaos.parsing.json_discriminator_value) = "interaction.connected"];
     .genai.ServerEvent event = 3;
     .genai.InteractionCompletedEvent interaction_completed = 4
         [(gaos.parsing.json_discriminator_value) = "interaction.completed"];
