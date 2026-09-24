@@ -29,6 +29,7 @@ from google.antigravity.connections.local import local_openai_connection
 from google.antigravity.connections.local import local_openai_connection_config
 from google.antigravity.connections.local import test_utils
 from google.antigravity.hooks import policy
+from google.antigravity.tools import tool_runner as tool_runner_mod
 
 
 class LocalOpenAIConnectionTest(unittest.TestCase):
@@ -411,6 +412,95 @@ class LocalOpenAIConnectionTest(unittest.TestCase):
       server.shutdown()
       server.server_close()
       server_thread.join()
+
+  def test_policies_forwarded_to_strategy_and_harness_config(self):
+    """Verify explicit policies are forwarded to LocalOpenAIConnectionStrategy."""
+    denies = [
+        policy.deny("create_file"),
+        policy.deny("edit_file"),
+        policy.deny("run_command"),
+    ]
+    config = local_openai_connection_config.LocalOpenAIAgentConfig(
+        base_url="http://localhost:11434/v1",
+        model="llama3.1",
+        policies=denies,
+    )
+    strategy = config.create_strategy(
+        tool_runner=mock.MagicMock(),
+        hook_runner=mock.MagicMock(),
+    )
+    self.assertEqual(strategy._policies, denies)
+    h_cfg = strategy._build_harness_config()
+    self.assertTrue(h_cfg.HasField("policy_config"))
+    self.assertEqual(len(h_cfg.policy_config.rules), 3)
+
+  def test_default_policies_forwarded_to_strategy(self):
+    """Verify default confirm_run_command() policy reaches strategy when policies is omitted."""
+    config = local_openai_connection_config.LocalOpenAIAgentConfig(
+        base_url="http://localhost:11434/v1",
+        model="llama3.1",
+    )
+    strategy = config.create_strategy(
+        tool_runner=mock.MagicMock(),
+        hook_runner=mock.MagicMock(),
+    )
+    self.assertEqual(len(strategy._policies), 2)
+    self.assertEqual(strategy._policies[0].tool, "run_command")
+    self.assertEqual(strategy._policies[0].decision, policy.Decision.DENY)
+    h_cfg = strategy._build_harness_config()
+    self.assertTrue(h_cfg.HasField("policy_config"))
+    self.assertEqual(len(h_cfg.policy_config.rules), 2)
+
+  def test_budget_and_session_continuation_mode_forwarded_to_strategy(self):
+    """Verify budget_config and session_continuation_mode are forwarded."""
+    budget = types.BudgetConfig(max_model_calls=7, max_total_tokens=12000)
+    config = local_openai_connection_config.LocalOpenAIAgentConfig(
+        base_url="http://localhost:11434/v1",
+        model="llama3.1",
+        conversation_id="a" * 32,
+        session_continuation_mode=types.SessionContinuationMode.RESUME,
+        budget_config=budget,
+    )
+    strategy = config.create_strategy(
+        tool_runner=mock.MagicMock(),
+        hook_runner=mock.MagicMock(),
+    )
+    self.assertEqual(
+        strategy._session_continuation_mode,
+        types.SessionContinuationMode.RESUME,
+    )
+    self.assertEqual(strategy._budget_config, budget)
+    h_cfg = strategy._build_harness_config()
+    self.assertEqual(
+        h_cfg.session_continuation_mode,
+        localharness_pb2.HarnessConfig.RESUME,
+    )
+    self.assertTrue(h_cfg.HasField("budget_config"))
+    self.assertEqual(h_cfg.budget_config.max_model_calls, 7)
+    self.assertEqual(h_cfg.budget_config.max_total_tokens, 12000)
+
+  def test_tools_forwarded_to_strategy(self):
+    """Verify custom tools are forwarded to strategy and included in harness proto."""
+    def custom_lookup(query: str) -> str:
+      """Looks up a query."""
+      return query
+
+    config = local_openai_connection_config.LocalOpenAIAgentConfig(
+        base_url="http://localhost:11434/v1",
+        model="llama3.1",
+        tools=[custom_lookup],
+    )
+    t_runner = tool_runner_mod.ToolRunner(
+        tools=config._get_all_custom_tools()
+    )
+    strategy = config.create_strategy(
+        tool_runner=t_runner,
+        hook_runner=mock.MagicMock(),
+    )
+    self.assertEqual(strategy._tools, [custom_lookup])
+    h_cfg = strategy._build_harness_config()
+    tool_names = [t.name for t in h_cfg.tools]
+    self.assertIn("custom_lookup", tool_names)
 
 
 if __name__ == "__main__":

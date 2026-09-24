@@ -171,6 +171,8 @@ from google.antigravity.connections.local import litert_connection_config
 from google.antigravity.connections.local import litert_server
 from google.antigravity.connections.local import local_connection
 from google.antigravity.connections.local import test_utils
+from google.antigravity.hooks import policy
+from google.antigravity.tools import tool_runner as tool_runner_mod
 
 # pylint: enable=g-import-not-at-top
 
@@ -1199,6 +1201,91 @@ class LiteRTConnectionTest(unittest.IsolatedAsyncioTestCase):
       _, kwargs = mock_engine.create_conversation.call_args
       self.assertEqual(kwargs["max_output_tokens"], 4096)
       self.assertIsNone(kwargs["thinking_config"])
+
+  def test_policies_forwarded_to_strategy_and_harness_config(self):
+    """Verify explicit policies are forwarded to LiteRTConnectionStrategy."""
+    denies = [
+        policy.deny("create_file"),
+        policy.deny("edit_file"),
+        policy.deny("run_command"),
+    ]
+    config = litert_connection_config.LiteRTAgentConfig(
+        model_path="/tmp/model.litertlm",
+        policies=denies,
+    )
+    strategy = config.create_strategy(
+        tool_runner=mock.MagicMock(),
+        hook_runner=mock.MagicMock(),
+    )
+    self.assertEqual(strategy._policies, denies)
+    h_cfg = strategy._build_harness_config()
+    self.assertTrue(h_cfg.HasField("policy_config"))
+    self.assertEqual(len(h_cfg.policy_config.rules), 3)
+
+  def test_default_policies_forwarded_to_strategy(self):
+    """Verify default confirm_run_command() policy reaches strategy when policies is omitted."""
+    config = litert_connection_config.LiteRTAgentConfig(
+        model_path="/tmp/model.litertlm",
+    )
+    strategy = config.create_strategy(
+        tool_runner=mock.MagicMock(),
+        hook_runner=mock.MagicMock(),
+    )
+    self.assertEqual(len(strategy._policies), 2)
+    self.assertEqual(strategy._policies[0].tool, "run_command")
+    self.assertEqual(strategy._policies[0].decision, policy.Decision.DENY)
+    h_cfg = strategy._build_harness_config()
+    self.assertTrue(h_cfg.HasField("policy_config"))
+    self.assertEqual(len(h_cfg.policy_config.rules), 2)
+
+  def test_budget_and_session_continuation_mode_forwarded_to_strategy(self):
+    """Verify budget_config and session_continuation_mode are forwarded."""
+    budget = types.BudgetConfig(max_model_calls=5, max_total_tokens=8000)
+    config = litert_connection_config.LiteRTAgentConfig(
+        model_path="/tmp/model.litertlm",
+        conversation_id="b" * 32,
+        session_continuation_mode=types.SessionContinuationMode.RESUME,
+        budget_config=budget,
+    )
+    strategy = config.create_strategy(
+        tool_runner=mock.MagicMock(),
+        hook_runner=mock.MagicMock(),
+    )
+    self.assertEqual(
+        strategy._session_continuation_mode,
+        types.SessionContinuationMode.RESUME,
+    )
+    self.assertEqual(strategy._budget_config, budget)
+    h_cfg = strategy._build_harness_config()
+    self.assertEqual(
+        h_cfg.session_continuation_mode,
+        localharness_pb2.HarnessConfig.RESUME,
+    )
+    self.assertTrue(h_cfg.HasField("budget_config"))
+    self.assertEqual(h_cfg.budget_config.max_model_calls, 5)
+    self.assertEqual(h_cfg.budget_config.max_total_tokens, 8000)
+
+  def test_tools_forwarded_to_strategy(self):
+    """Verify custom tools are forwarded to strategy and included in harness proto."""
+    def custom_lookup(query: str) -> str:
+      """Looks up a query."""
+      return query
+
+    config = litert_connection_config.LiteRTAgentConfig(
+        model_path="/tmp/model.litertlm",
+        tools=[custom_lookup],
+    )
+    t_runner = tool_runner_mod.ToolRunner(
+        tools=config._get_all_custom_tools()
+    )
+    strategy = config.create_strategy(
+        tool_runner=t_runner,
+        hook_runner=mock.MagicMock(),
+    )
+    self.assertEqual(strategy._tools, [custom_lookup])
+    h_cfg = strategy._build_harness_config()
+    tool_names = [t.name for t in h_cfg.tools]
+    self.assertIn("custom_lookup", tool_names)
 
 
 class DeriveLiteRTCompactionConfigTest(unittest.TestCase):

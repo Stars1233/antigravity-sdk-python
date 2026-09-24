@@ -201,6 +201,7 @@ class LiteRTAgentConfig(BaseLocalAgentConfig):
         capabilities_config=self.capabilities,
         compaction_config=self._get_effective_compaction_config(),
         conversation_id=self.conversation_id,
+        session_continuation_mode=self.session_continuation_mode,
         save_dir=self._get_or_create_save_dir(),
         workspaces=self.workspaces,
         app_data_dir=self.app_data_dir,
@@ -210,6 +211,9 @@ class LiteRTAgentConfig(BaseLocalAgentConfig):
         env=self.env,
         debug_config=self.debug_config,
         retry_config=self.retry_config,
+        budget_config=self.budget_config,
+        policies=list(self.policies) if self.policies is not None else None,
+        tools=self.tools,
     )
 
   @classmethod
