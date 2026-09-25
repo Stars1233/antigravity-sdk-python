@@ -17,6 +17,7 @@ edition = "2024";
 package antigravity.localharness;
 
 import "google/antigravity/proto/content.proto";
+import "learning/genai/skills/proto/skill.proto";
 
 enum LifecycleHook {
   LIFECYCLE_HOOK_UNSPECIFIED = 0;
@@ -113,6 +114,7 @@ message HarnessConfig {
   .antigravity.localharness.AgentBehavior agent_behavior = 22;
   .antigravity.localharness.BudgetConfig budget_config = 23;
   .antigravity.localharness.CompactionConfig compaction_config = 24;
+  .antigravity.localharness.SkillsConfig skills_config = 27;
   .antigravity.localharness.RulesConfig rules_config = 28;
   extensions 1000 to 1999;
   extensions 2000 to max;
@@ -287,6 +289,16 @@ message ReadUrlContentToolConfig {
 message ToolSearchConfig {
   bool enabled = 1;
   extensions 1000 to max;
+}
+message SkillSource {
+  oneof source {
+    .genai.skills.Skill skill = 1;
+    string directory_path = 2;
+  }
+}
+message SkillsConfig {
+  bool enabled = 1 [default = true];
+  repeated .antigravity.localharness.SkillSource skills = 2;
 }
 message ManageTaskToolConfig {
   bool enabled = 1;
