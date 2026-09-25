@@ -17,6 +17,9 @@ import json
 import unittest
 from unittest import mock
 
+from google.protobuf import json_format
+
+from google.antigravity.proto import steps_pb2
 from google.antigravity.proto import localharness_pb2
 from google.antigravity.connections.local import local_connection
 from google.antigravity.connections.local import test_utils
@@ -147,6 +150,116 @@ class TestLocalHarnessTest(unittest.IsolatedAsyncioTestCase):
     self.assertIn("toolConfirmationRequest", step_update)
     self.assertIn("viewFile", step_update)
     self.assertEqual(step_update["viewFile"]["filePath"], "/foo")
+
+  async def test_send_skill_lookup_action_wire_and_binary(self):
+    lookup_action = localharness_pb2.ActionSkillLookup(
+        operation=localharness_pb2.ActionSkillLookup.OPERATION_LOOKUP_SKILLS,
+        requested_skill_names=["alpha", "beta"],
+        resolved_skill_names=["alpha"],
+        error_message="",
+    )
+    event = localharness_pb2.OutputEvent(
+        step_update=localharness_pb2.StepUpdate(
+            trajectory_id="test_traj",
+            step_index=1,
+            state=localharness_pb2.StepUpdate.STATE_DONE,
+            skill_lookup=lookup_action,
+        )
+    )
+    await self.harness.send_event(event)
+    await self.ws.close()
+
+    items = []
+    async for msg in self.ws:
+      items.append(msg)
+
+    self.assertEqual(len(items), 1)
+    data = json.loads(items[0])
+    self.assertIn("stepUpdate", data)
+    step_update = data["stepUpdate"]
+    self.assertIn("skillLookup", step_update)
+    self.assertEqual(
+        step_update["skillLookup"]["operation"], "OPERATION_LOOKUP_SKILLS"
+    )
+    self.assertEqual(
+        step_update["skillLookup"]["requestedSkillNames"], ["alpha", "beta"]
+    )
+    self.assertEqual(
+        step_update["skillLookup"]["resolvedSkillNames"], ["alpha"]
+    )
+
+    # Verify JSON deserialization via standard json_format into OutputEvent.
+    parsed_event = json_format.Parse(items[0], localharness_pb2.OutputEvent())
+    self.assertEqual(
+        parsed_event.step_update.skill_lookup.operation,
+        localharness_pb2.ActionSkillLookup.OPERATION_LOOKUP_SKILLS,
+    )
+    self.assertEqual(
+        list(parsed_event.step_update.skill_lookup.requested_skill_names),
+        ["alpha", "beta"],
+    )
+    self.assertEqual(
+        list(parsed_event.step_update.skill_lookup.resolved_skill_names),
+        ["alpha"],
+    )
+
+    # Verify binary protobuf serialization/deserialization.
+    binary_bytes = event.SerializeToString()
+    deserialized = localharness_pb2.OutputEvent.FromString(binary_bytes)
+    self.assertEqual(
+        deserialized.step_update.skill_lookup.operation,
+        localharness_pb2.ActionSkillLookup.OPERATION_LOOKUP_SKILLS,
+    )
+    self.assertEqual(
+        list(deserialized.step_update.skill_lookup.resolved_skill_names),
+        ["alpha"],
+    )
+
+  def test_interactions_steps_skill_lookup(self):
+    call_step = steps_pb2.Step(
+        tool_call=steps_pb2.ToolCallStep(
+            id="call_1",
+            skill_lookup_call=steps_pb2.SkillLookupCallStep(
+                operation=steps_pb2.SkillLookupCallStep.OPERATION_LOOKUP_SKILLS,
+                requested_skill_names=["alpha"],
+            ),
+        )
+    )
+    result_step = steps_pb2.Step(
+        tool_result=steps_pb2.ToolResultStep(
+            call_id="call_1",
+            skill_lookup_result=steps_pb2.SkillLookupResultStep(
+                resolved_skill_names=["alpha"],
+            ),
+        )
+    )
+
+    # Wire JSON format verification.
+    call_json = json_format.MessageToJson(call_step)
+    self.assertIn("skillLookupCall", call_json)
+    parsed_call = json_format.Parse(call_json, steps_pb2.Step())
+    self.assertEqual(
+        parsed_call.tool_call.skill_lookup_call.operation,
+        steps_pb2.SkillLookupCallStep.OPERATION_LOOKUP_SKILLS,
+    )
+
+    result_json = json_format.MessageToJson(result_step)
+    self.assertIn("skillLookupResult", result_json)
+    parsed_result = json_format.Parse(result_json, steps_pb2.Step())
+    self.assertEqual(
+        list(
+            parsed_result.tool_result.skill_lookup_result.resolved_skill_names
+        ),
+        ["alpha"],
+    )
+
+    # Binary roundtrip verification.
+    call_bytes = call_step.SerializeToString()
+    deser_call = steps_pb2.Step.FromString(call_bytes)
+    self.assertEqual(
+        deser_call.tool_call.skill_lookup_call.operation,
+        steps_pb2.SkillLookupCallStep.OPERATION_LOOKUP_SKILLS,
+    )
 
 
 class PatchDefaultBinaryPathTest(unittest.TestCase):

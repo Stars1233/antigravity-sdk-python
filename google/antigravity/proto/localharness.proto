@@ -389,6 +389,7 @@ message StepUpdate {
   .antigravity.localharness.ActionSearchWeb search_web = 34;
   .antigravity.localharness.ActionReadUrlContent read_url_content = 35;
   .antigravity.localharness.ActionCustomTool custom_tool = 36;
+  .antigravity.localharness.ActionSkillLookup skill_lookup = 37;
   string request_text = 50;
   .antigravity.localharness.ToolConfirmationRequest tool_confirmation_request =
       51;
@@ -658,6 +659,18 @@ message ActionMcpTool {
 message ActionCustomTool {
   .antigravity.localharness.ToolCall tool_call = 1;
   .antigravity.localharness.ToolResponse tool_response = 2;
+}
+message ActionSkillLookup {
+  enum Operation {
+    OPERATION_UNSPECIFIED = 0;
+    OPERATION_LIST_SKILLS = 1;
+    OPERATION_LOOKUP_SKILLS = 2;
+    OPERATION_GET_SKILL_RESOURCES = 3;
+  }
+  .antigravity.localharness.ActionSkillLookup.Operation operation = 1;
+  repeated string requested_skill_names = 2;
+  repeated string resolved_skill_names = 3;
+  string error_message = 4;
 }
 message CallHookRequest {
   oneof args {
