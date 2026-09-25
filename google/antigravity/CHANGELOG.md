@@ -7,57 +7,6 @@ All notable changes to the Google Antigravity Python SDK will be documented in t
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.1.19] - 2026-09-25
-
-Antigravity Python SDK v0.1.19 enhances evaluation workflows with default high-reasoning thinking budgets for Gemini models, expands configuration propagation across alternative backends, improves tool error resilience and policy controls, and aligns default directory tooling with Cortex conventions.
-
-### 🌟 Key Highlights
-- **High Thinking Level in Evaluation Mode**: `AgentConfig.eval()` now configures Gemini text models (`ModelType.TEXT`) with `ThinkingLevel.HIGH` by default, activating extended reasoning thoughts during benchmark and evaluation runs.
-  ```python
-  from antigravity import AgentConfig, types
-
-  # Enables high thinking level by default; override with None or another level if desired
-  config = AgentConfig().eval(thinking_level=types.ThinkingLevel.HIGH)
-  ```
-- **Parity for Alternative Local Configs**: `LocalOpenAIAgentConfig` and `LiteRTAgentConfig` now propagate shared execution settings including `policies`, `tools`, `budget_config`, and `session_continuation_mode`.
-  ```python
-  from antigravity import LiteRTAgentConfig, policy
-
-  config = LiteRTAgentConfig(policies=[policy.allow_all()], tools=[custom_tool])
-  ```
-- **Resilient Tool Call Error Handling**: Failed tool operations and pre-tool hook denials are now preserved as structured tool call errors rather than leaking raw error messages into assistant conversational text streams or dropping concurrent tool calls.
-- **Selective Workspace Containment for Eval Policies**: Configuring `policy.allow_all()` without `policy.workspace_only()` now relaxes strict filesystem containment boundaries while preserving repository root detection, allowing autonomous agents to interact with external paths.
-  ```python
-  from antigravity import policy
-
-  # Allows access to external environment paths while preserving repository context
-  policies = [policy.allow_all()]
-  ```
-- **Custom Denial Reasons in Policies**: `policy.deny()` now respects custom reason strings when rejecting tool calls instead of substituting a generic denial message.
-  ```python
-  from antigravity import policy
-
-  deny_policy = policy.deny("Operation not permitted in read-only environment.")
-  ```
-
----
-
-### 📋 Detailed Changes
-
-#### Features & Enhancements
-- **AgentConfig**: Added an optional `thinking_level` parameter to `AgentConfig.eval()`, defaulting to `ThinkingLevel.HIGH`.
-- **Local Connection Configs**: `LocalOpenAIAgentConfig` and `LiteRTAgentConfig` now forward `session_continuation_mode`, `budget_config`, `policies`, and `tools` to their underlying runtime strategy.
-- **Policy Framework**: `policy.allow_all()` automatically disables strict workspace containment unless `policy.workspace_only()` is explicitly configured.
-
-#### Model & Default Changes
-- **AgentConfig.eval()**: Default `thinking_level` is set to `ThinkingLevel.HIGH` for text models to maximize reasoning quality in evaluation workflows. To disable extended thoughts, set `thinking_level=None`.
-- **BuiltinTools**: `BuiltinTools.LIST_DIR` (`list_directory` / `list_dir`) is removed from default tool sets (`default()`, `minimal()`, `read_only()`, `nondestructive()`) to align with Cortex defaults. Re-enable it explicitly via `enabled_tools=[BuiltinTools.LIST_DIR]` if required.
-
-#### Bug Fixes
-- **Tool Error Handling**: Tool failures and hook denials leaked error strings into assistant text responses and aborted sibling calls; failed operations are now preserved as step-level tool errors.
-- **Policy Denial Messages**: Custom reason strings passed to `policy.deny(reason=...)` were overridden with generic messages; user-provided reasons are now honored.
-- **CapabilitiesConfig**: Instantiating default `CapabilitiesConfig` and `AgentConfig` triggered spurious `DeprecationWarning` messages on unconfigured compaction fields; deprecated attribute access is now bypassed on defaults.
-
 ## [0.1.18] - 2026-09-21
 
 This release announces official Antigravity SDK local model support (LiteRT and LocalOpenAI configs are now ready to use), adds a standardized evaluation configuration preset to provide a product-agnostic default for Gemini's coding ability, introduces custom model overrides for subagents, enables schedule and background task management by default, and expands compatibility with Vertex AI service tier handling.
