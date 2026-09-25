@@ -1146,6 +1146,32 @@ class ToPolicyConfigProtoTest(absltest.TestCase):
     self.assertNotIn("rule_0", dynamic_policy_map)
     self.assertNotIn("rule_2", dynamic_policy_map)
 
+  def test_allow_all_disables_workspace_containment(self):
+    """allow_all() without workspace_only() disables built-in containment."""
+    config, _ = policy._to_policy_config_proto([policy.allow_all()])
+    self.assertEqual(
+        config.workspace_containment,
+        localharness_pb2.PolicyConfig.WORKSPACE_CONTAINMENT_DISABLED,
+    )
+
+  def test_allow_all_with_workspace_only_keeps_workspace_containment(self):
+    """allow_all() combined with workspace_only() keeps built-in containment."""
+    config, _ = policy._to_policy_config_proto(
+        [policy.allow_all(), policy.workspace_only(["/tmp/ws"])]
+    )
+    self.assertEqual(
+        config.workspace_containment,
+        localharness_pb2.PolicyConfig.WORKSPACE_CONTAINMENT_UNSPECIFIED,
+    )
+
+  def test_confirm_run_command_keeps_workspace_containment(self):
+    """confirm_run_command() keeps built-in workspace containment."""
+    config, _ = policy._to_policy_config_proto(policy.confirm_run_command())
+    self.assertEqual(
+        config.workspace_containment,
+        localharness_pb2.PolicyConfig.WORKSPACE_CONTAINMENT_UNSPECIFIED,
+    )
+
 
 class ExecuteAskUserTest(unittest.IsolatedAsyncioTestCase):
   """Tests _execute_ask_user handler dispatch and reason handling."""

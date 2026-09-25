@@ -852,6 +852,8 @@ def _to_policy_config_proto(
   dynamic_policy_map: dict[str, Policy] = {}
   proto_rules: list[localharness_pb2.PolicyRule] = []
   auto_policy: AutoPolicy | None = None
+  has_workspace_only = False
+  has_allow_all = False
 
   for i, p in enumerate(flat):
     if isinstance(p, AutoPolicy):
@@ -866,6 +868,15 @@ def _to_policy_config_proto(
     # TODO: Remove _parse_tool_target once Policy has server_name.
     tool_name, server_name = _parse_tool_target(p.tool)
     is_workspace_only = p.name == _WORKSPACE_ONLY_POLICY_NAME
+    if is_workspace_only:
+      has_workspace_only = True
+    if (
+        p.name == "allow_all"
+        and p.tool == _WILDCARD
+        and p.decision == Decision.APPROVE
+        and p.when is None
+    ):
+      has_allow_all = True
     is_dynamic = (
         p.when is not None or p.decision == Decision.ASK_USER
     ) and not is_workspace_only
@@ -895,8 +906,17 @@ def _to_policy_config_proto(
     )
     dynamic_policy_map["auto"] = auto_policy
 
+  workspace_containment = (
+      localharness_pb2.PolicyConfig.WORKSPACE_CONTAINMENT_UNSPECIFIED
+  )
+  if has_allow_all and not has_workspace_only:
+    workspace_containment = (
+        localharness_pb2.PolicyConfig.WORKSPACE_CONTAINMENT_DISABLED
+    )
+
   config = localharness_pb2.PolicyConfig(
       rules=proto_rules,
+      workspace_containment=workspace_containment,
       auto_config=auto_config,
   )
   return config, dynamic_policy_map
