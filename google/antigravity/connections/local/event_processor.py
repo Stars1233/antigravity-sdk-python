@@ -402,8 +402,16 @@ class LocalConnectionStep(types.Step):
           )
 
     error_field = step_dict.get("error", {})
-    error_msg = error_field.get("error_message", "")
-    http_code = error_field.get("http_code", 0)
+    error_msg = (
+        error_field.get("error_message", "")
+        if isinstance(error_field, dict)
+        else ""
+    ) or step_dict.get("error_message", "")
+    http_code = (
+        error_field.get("http_code", 0)
+        if isinstance(error_field, dict)
+        else 0
+    )
 
     return cls(
         id=id_str,

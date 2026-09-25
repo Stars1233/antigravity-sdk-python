@@ -467,6 +467,38 @@ class LocalConnectionStepFromDictTest(absltest.TestCase):
     self.assertLen(step.tool_calls, 1)
     self.assertEqual(step.tool_calls[0].id, "traj_123:5")
 
+  def test_step_from_dict_failed_tool_call_preserves_tool_and_error_message(
+      self,
+  ):
+    """Verifies failed built-in tool steps preserve TOOL_CALL type and top-level error_message."""
+    step = event_processor.LocalConnectionStep.from_dict({
+        "trajectory_id": "traj_123",
+        "step_index": 2,
+        "source": "SOURCE_MODEL",
+        "target": "TARGET_ENVIRONMENT",
+        "state": "STATE_ERROR",
+        "text": "View missing.txt",
+        "text_delta": "",
+        "error_message": (
+            "Cannot view file file:///tmp/missing.txt which does not exist."
+        ),
+        "view_file": {
+            "file_path": "file:///tmp/missing.txt",
+            "start_line": 0,
+            "end_line": 799,
+        },
+    })
+    self.assertEqual(step.type, types.StepType.TOOL_CALL)
+    self.assertEqual(step.status, types.StepStatus.ERROR)
+    self.assertEqual(step.target, types.StepTarget.ENVIRONMENT)
+    self.assertLen(step.tool_calls, 1)
+    self.assertEqual(step.tool_calls[0].name, "view_file")
+    self.assertEqual(step.tool_calls[0].canonical_path, "/tmp/missing.txt")
+    self.assertEqual(
+        step.error,
+        "Cannot view file file:///tmp/missing.txt which does not exist.",
+    )
+
 
 class LocalHarnessEventProcessorTest(unittest.IsolatedAsyncioTestCase):
   """Tests for LocalHarnessEventProcessor."""

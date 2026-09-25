@@ -156,7 +156,11 @@ class Conversation:
       is_model = step.source == types.StepSource.MODEL
       is_target_user = step.target == types.StepTarget.USER
 
-      if is_model and is_target_user:
+      if (
+          is_model
+          and is_target_user
+          and step.status != types.StepStatus.ERROR
+      ):
         # Yield real-time thought deltas directly
         if step.thinking_delta:
           yield types.Thought(

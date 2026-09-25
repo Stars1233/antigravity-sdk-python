@@ -309,6 +309,44 @@ class ConversationReceiveChunksTest(unittest.IsolatedAsyncioTestCase):
     self.assertIsInstance(chunks[0], types.Text)
     self.assertEqual(chunks[0].text, "Valid answer")
 
+  async def test_receive_chunks_filters_out_error_steps(self) -> None:
+    """Verifies that receive_chunks does not yield text or thoughts from ERROR steps."""
+    s_error = _make_step(
+        "Cannot view file file:///tmp/missing.txt which does not exist.",
+        step_index=1,
+        source=types.StepSource.MODEL,
+        target=types.StepTarget.USER,
+        status=types.StepStatus.ERROR,
+    )
+    s_error.content_delta = (
+        "Cannot view file file:///tmp/missing.txt which does not exist."
+    )
+    s_error.thinking_delta = "Error thinking"
+
+    s_valid = _make_step(
+        "Final answer",
+        step_index=2,
+        source=types.StepSource.MODEL,
+        target=types.StepTarget.USER,
+        status=types.StepStatus.DONE,
+    )
+    s_valid.content_delta = "Final answer"
+
+    mock_connection = mock.MagicMock(spec=connection.Connection)
+
+    async def mock_generator():
+      yield s_error
+      yield s_valid
+
+    mock_connection.receive_steps.return_value = mock_generator()
+    conv = conversation.Conversation(mock_connection)
+
+    chunks = [chunk async for chunk in conv.receive_chunks()]
+
+    self.assertEqual(len(chunks), 1)
+    self.assertIsInstance(chunks[0], types.Text)
+    self.assertEqual(chunks[0].text, "Final answer")
+
   async def test_receive_chunks_routes_tool_calls(self) -> None:
     """Verifies that receive_chunks yields strongly-typed ToolCall objects natively."""
     tc = types.ToolCall(
