@@ -30,6 +30,7 @@ injectable parameters so the model never sees them.
 
 import ast
 import asyncio
+from collections.abc import Sequence
 import functools
 import inspect
 import types as std_types
@@ -268,7 +269,7 @@ class ToolRunner:
   receive the context automatically at execution time.
   """
 
-  def __init__(self, tools: list[types.PythonTool] | None = None):
+  def __init__(self, tools: Sequence[types.PythonTool] | None = None):
     self._tools: dict[str, types.PythonTool] = {}
     self._context: tool_context_module.ToolContext | None = None
     # Maps tool name → parameter name for ToolContext injection.
@@ -462,7 +463,7 @@ class ToolRunner:
 
   async def process_tool_calls(
       self,
-      tool_calls: list[types.ToolCall],
+      tool_calls: Sequence[types.ToolCall],
   ) -> list[types.ToolResult]:
     """Executes a batch of tool calls concurrently and returns structured results.
 
@@ -476,11 +477,13 @@ class ToolRunner:
     sequential side-effect ordering.
 
     Args:
-      tool_calls: List of ToolCall objects.
+      tool_calls: Sequence of ToolCall objects.
 
     Returns:
       A list of ToolResult, one per input tool call, in the same order.
     """
+    if not tool_calls:
+      return []
 
     async def _execute_one(tc: types.ToolCall) -> types.ToolResult:
       # The entire body is wrapped in try/except so that nothing can

@@ -483,6 +483,31 @@ class ProcessToolCallsTest(absltest.TestCase):
     self.assertLen(results, 1)
     self.assertEqual(results[0].result, "ok")
 
+  def test_init_with_tuple_sequence(self):
+    """Verifies that ToolRunner accepts a non-list Sequence of tools."""
+    runner = tool_runner.ToolRunner((_sample_tool, _async_tool))
+    self.assertCountEqual(runner.tool_names, ["_sample_tool", "_async_tool"])
+
+  def test_process_tool_calls_empty(self):
+    """Verifies that an empty sequence of tool calls returns an empty list immediately."""
+    runner = tool_runner.ToolRunner([_sample_tool])
+    results = asyncio.run(runner.process_tool_calls([]))
+    self.assertEqual(results, [])
+    self.assertIsInstance(results, list)
+
+  def test_process_tool_calls_tuple_sequence(self):
+    """Verifies processing tool calls passed as a tuple (non-list Sequence)."""
+    runner = tool_runner.ToolRunner([_sample_tool, _async_tool])
+    results = asyncio.run(
+        runner.process_tool_calls((
+            sdk_types.ToolCall(name="_sample_tool", args={"arg1": "World"}),
+            sdk_types.ToolCall(name="_async_tool", args={"x": 10, "y": 20}),
+        ))
+    )
+    self.assertLen(results, 2)
+    self.assertEqual(results[0].result, "Hello World")
+    self.assertEqual(results[1].result, 30)
+
   def test_process_tool_calls_with_schema(self):
     """Verifies batch processing of ToolWithSchema.
 
