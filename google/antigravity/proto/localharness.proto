@@ -290,10 +290,8 @@ message ToolSearchConfig {
   extensions 1000 to max;
 }
 message SkillSource {
-  oneof source {
-    reserved 1;
-    string directory_path = 2;
-  }
+  reserved 1;
+  string directory_path = 2;
 }
 message SkillsConfig {
   bool enabled = 1 [default = true];
